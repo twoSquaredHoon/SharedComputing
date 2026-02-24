@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+ml/data/
+ml/saved_model.pt
+.DS_Store
