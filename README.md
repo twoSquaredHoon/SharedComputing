@@ -61,6 +61,37 @@ Model trains for 5 epochs
 Final model saved to:
 
 ml/saved_model.pt
+
+### Test model with image on your own
+SharedComputing Setup
+1. Go to the project folder
+```
+bashcd ~/Documents/2.\ Area/SharedComputing
+```
+2. Create and activate a virtual environment
+```
+bashrm -rf .venv
+python3.11 -m venv .venv
+source .venv/bin/activate
+```
+You should see (.venv) in your terminal prompt.
+3. Install dependencies
+```
+bashpip3 install torch torchvision tqdm
+pip3 install "numpy<2"
+```
+4. Train the model (already done — skippable)
+```
+bashpython3 ml/train_cifar10.py
+```
+5. Run a prediction
+```
+bashpython3 ml/predict.py /path/to/image.jpg
+```
+Drag an image from Finder into the terminal to get the path automatically.
+
+Every new terminal session: run source .venv/bin/activate before using python3 or pip3.
+
 #### Current Status
 
 ML pipeline functional
