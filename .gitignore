@@ -1,6 +1,30 @@
+# Virtual environment
 .venv/
+
+# Data & datasets (too large for git)
+data/
+archive/
+*.zip
+*.tar.gz
+
+# Model checkpoints (too large for git)
+checkpoints/
+*.pt
+*.pth
+
+# Training summaries (auto-generated)
+summary.md
+summary_dist.md
+
+# Python
 __pycache__/
 *.pyc
-ml/data/
-ml/saved_model.pt
+*.pyo
+*.pyd
+.Python
+
+# macOS
 .DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
