@@ -18,6 +18,19 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
 import numpy as np
+import socket
+
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "localhost"
+
+LOCAL_IP = get_local_ip()
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 BASE        = Path(__file__).parent
@@ -177,7 +190,7 @@ def run_master():
     print(f"  Classes  : {full_dataset.classes}")
     print(f"  Dataset  : {total} images")
     print(f"  Rounds   : {ROUNDS}  ×  {LOCAL_EPOCHS} local epoch(s)")
-    print(f"\n  Waiting for workers to connect at http://10.140.74.23:{MASTER_PORT}")
+    print(f"\n  Waiting for workers to connect at http://{LOCAL_IP}:{MASTER_PORT}")
     print(f"  Workers can join by running: python3 worker.py")
     print(f"  Press Ctrl+C to start training once workers are ready.\n")
 
@@ -252,7 +265,7 @@ def run_master():
 | | |
 |--|--|
 | Date | {time.strftime('%Y-%m-%d %H:%M:%S')} |
-| Master | 10.140.74.23:{MASTER_PORT} |
+| Master | {LOCAL_IP}:{MASTER_PORT} |
 | Workers | {list(state['registered_workers'])} |
 | Dataset | {total} images |
 | Classes | {full_dataset.classes} |

@@ -16,8 +16,9 @@ import requests
 import socket
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MASTER_URL  = "http://10.140.74.23:8000"   # your master Mac's IP
-WORKER_ID   = socket.gethostname()          # uses this Mac's hostname automatically
+master_ip  = input("  Enter master IP address: ").strip()
+MASTER_URL = f"http://{master_ip}:8000"
+WORKER_ID  = socket.gethostname()          # uses this Mac's hostname automatically
 DATASET_DIR = Path(__file__).parent / "data"
 SEED        = 42
 
