@@ -1,0 +1,11 @@
+torch
+torchvision
+torchaudio
+numpy<2
+pillow
+tqdm
+fastapi
+uvicorn
+requests
+python-multipart
+

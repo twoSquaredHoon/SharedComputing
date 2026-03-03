@@ -1,100 +1,97 @@
-### SharedComputing
-#### Overview
+# SharedComputing
 
-SharedComputing is a distributed AI training platform designed to combine the computing power of multiple local devices into a unified system.
+SharedComputing is a local distributed training project.
+The goal is simple: use multiple devices on the same LAN as one training team.
 
-This repository currently implements the core machine learning pipeline as a validation phase before building the distributed master–worker architecture.
+## What is implemented
 
-The current implementation demonstrates:
+1. A single-machine baseline trainer for CIFAR-10 (`ml/train_cifar10.py`)
+2. A LAN-ready master-worker distributed MVP (`ml/distributed/*`)
+3. FastAPI-based control plane with polling workers
+4. Round checkpoints and training status endpoint
 
-Computer Vision training workflow
+## Project structure
 
-ResNet18 fine-tuning
-
-Model saving
-
-Device auto-detection (CPU / Apple MPS)
-
-#### Project Structure
-```
+```text
 SharedComputing/
-│
 ├── ml/
 │   ├── train_cifar10.py
-│   ├── saved_model.pt        # Generated after training
-│   └── data/                 # CIFAR-10 downloads here
-│
+│   └── distributed/
+│       ├── __init__.py
+│       ├── config.py
+│       ├── master.py
+│       ├── worker.py
+│       ├── run_master.py
+│       └── run_worker.py
+├── docs/
+│   └── distributed-training-guide.md
 ├── requirements.txt
 └── README.md
 ```
-#### Tech Stack
 
-Python 3.11
+## Environment setup
 
-PyTorch
-
-Torchvision
-
-NumPy (< 2)
-
-tqdm
-
-Apple Silicon MPS (if available)
-
-#### Setup (Mac)
-cd SharedComputing
+```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
 pip install -r requirements.txt
-#### Train (CIFAR-10 Validation Phase)
+```
+
+## Baseline training (single machine)
+
+```bash
 python ml/train_cifar10.py
+```
 
-What happens:
+Output model:
 
-CIFAR-10 downloads automatically into ml/data/
+`ml/saved_model.pt`
 
-Pretrained ResNet18 loads
+## Distributed training (master-worker over HTTP)
 
-Model trains for 5 epochs
+### Start master
 
-Final model saved to:
+```bash
+python -m ml.distributed.run_master --port 8000 --num-workers 2 --rounds 3
+```
 
-ml/saved_model.pt
-#### Current Status
+### Start workers
 
-ML pipeline functional
+```bash
+python -m ml.distributed.run_worker --master-url http://localhost:8000 --name w1
+python -m ml.distributed.run_worker --master-url http://localhost:8000 --name w2
+```
 
-Model saving functional
+### Check status
 
-Hardware acceleration supported
+```bash
+curl http://localhost:8000/status
+```
 
-Repository structured for distributed expansion
+### Checkpoints
 
-#### Roadmap
+Checkpoints are saved in:
 
-Next development phases:
+`ml/distributed/checkpoints/`
 
-Extract training logic into reusable module
+You will see:
 
-Implement Master–Worker architecture
+1. `global_round_*.pt`
+2. `best_global.pt`
 
-Add weight aggregation
+## LAN usage (real devices)
 
-LAN communication layer (FastAPI)
+1. Run master on one machine:
+   `python -m ml.distributed.run_master --host 0.0.0.0 --port 8000 --num-workers 2`
+2. Find master LAN IP (example `192.168.1.100`)
+3. On each worker machine:
+   `python -m ml.distributed.run_worker --master-url http://192.168.1.100:8000 --name worker-X`
 
-Performance-aware shard allocation
+Only the `--master-url` value changes when you move from localhost to real devices.
 
-Web demo layer
+## More guidance
 
-#### Vision
+For a practical, human-friendly walkthrough, read:
 
-SharedComputing aims to:
-
-Utilize idle local devices as distributed compute
-
-Automatically allocate workloads based on device performance
-
-Create a lightweight local AI training platform
-
-Move toward a PaaS-style distributed AI system
+[`docs/distributed-training-guide.md`](docs/distributed-training-guide.md)

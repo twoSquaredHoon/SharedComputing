@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 ml/data/
 ml/saved_model.pt
+ml/distributed/checkpoints/
 .DS_Store
