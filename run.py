@@ -24,21 +24,22 @@ if len(classes) < 2:
 
 print(f"\n  ✓ Found {len(classes)} classes: {[c.name for c in sorted(classes)]}")
 
-# ── Run single machine training first ────────────────────────────────────────
-print("\n  ► Phase 1: Single machine training\n")
-from train import train
-train()
+if __name__ == "__main__":
+    # ── Phase 1: Single machine training ─────────────────────────────────────
+    print("\n  ► Phase 1: Single machine training\n")
+    from train import train
+    train()
 
-# ── Run distributed training second ──────────────────────────────────────────
-print("\n  ► Phase 2: Distributed training\n")
-import torch.multiprocessing as mp
-from train_dist import master
-mp.set_start_method("spawn", force=True)
-master()
+    # ── Phase 2: Distributed training ────────────────────────────────────────
+    print("\n  ► Phase 2: Distributed training\n")
+    import torch.multiprocessing as mp
+    mp.set_start_method("spawn", force=True)
+    from train_dist import master
+    master()
 
-print("\n  ✓ All done.")
-print("  Results:")
-print("    checkpoints/best_model.pth       ← single machine")
-print("    checkpoints/best_model_dist.pth  ← distributed")
-print("    summary.md")
-print("    summary_dist.md\n")
+    print("\n  ✓ All done.")
+    print("  Results:")
+    print("    models/best_model.pth       ← single machine")
+    print("    models/best_model_dist.pth  ← distributed")
+    print("    summary.md")
+    print("    summary_dist.md\n")

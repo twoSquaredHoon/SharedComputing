@@ -16,7 +16,7 @@ from pathlib import Path
 # ── Paths ─────────────────────────────────────────────────────────────────────
 BASE        = Path(__file__).parent
 DATASET_DIR = BASE / "data"
-CKPT_DIR    = BASE / "checkpoints"
+CKPT_DIR    = BASE / "models"
 CKPT_PATH   = CKPT_DIR / "best_model.pth"
 SUMMARY     = BASE / "summary.md"
 
@@ -117,7 +117,7 @@ def train():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.fc.parameters(), lr=LR)
 
-    CKPT_DIR.mkdir(exist_ok=True)
+    CKPT_DIR.mkdir(exist_ok=True)  # creates models/ if it doesn't exist
     best_val_acc = 0.0
     history      = []
     train_start  = time.time()

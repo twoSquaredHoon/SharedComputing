@@ -17,7 +17,7 @@ from pathlib import Path
 # ── Paths ─────────────────────────────────────────────────────────────────────
 BASE        = Path(__file__).parent
 DATASET_DIR = BASE / "data"
-CKPT_DIR    = BASE / "checkpoints"
+CKPT_DIR    = BASE / "models"
 CKPT_PATH   = CKPT_DIR / "best_model_dist.pth"
 SUMMARY     = BASE / "summary_dist.md"
 
@@ -156,7 +156,7 @@ def master():
         print(f"  Worker {wid} started (PID {p.pid}, {len(worker_indices[wid])} images)")
     print()
 
-    CKPT_DIR.mkdir(exist_ok=True)
+    CKPT_DIR.mkdir(exist_ok=True)  # creates models/ if it doesn't exist
     best_val_acc = 0.0
     history      = []
     train_start  = time.time()

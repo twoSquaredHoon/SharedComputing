@@ -7,8 +7,8 @@ archive/
 *.zip
 *.tar.gz
 
-# Model checkpoints (too large for git)
-checkpoints/
+# Trained models (too large for git)
+models/
 *.pt
 *.pth
 
