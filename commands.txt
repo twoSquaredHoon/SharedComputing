@@ -1,0 +1,35 @@
+## Run on slave
+brew install python@3.11
+rm -rf .venv
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip3 install torch torchvision certifi requests
+pip3 install "numpy<2"
+
+## Run on master
+cd SharedComputing
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip3 install torch torchvision certifi fastapi uvicorn requests
+pip3 install "numpy<2"
+python3 master.py
+
+### Workflow understanding
+Master (your Mac)
+│
+│  1. Loads pretrained ResNet18
+│  2. Broadcasts global weights to worker
+│
+└──► Worker (second Mac)
+         Receives weights
+         Trains on its local data for 2 epochs
+         Sends updated weights back
+│
+│  3. Master averages the weights (FedAvg)
+│  4. Evaluates accuracy on validation set
+│  5. Saves if improved
+│
+│  Repeat for 15 rounds
+│
+│  6. Final test evaluation
+│  7. Saves best_model_net.pth
