@@ -1,131 +1,229 @@
-### SharedComputing
-#### Overview
+# SharedComputing
 
-SharedComputing is a distributed AI training platform designed to combine the computing power of multiple local devices into a unified system.
+## Overview
 
-This repository currently implements the core machine learning pipeline as a validation phase before building the distributed master–worker architecture.
+SharedComputing is a distributed AI training platform that combines the compute power of multiple local devices into a unified federated learning system.
 
-The current implementation demonstrates:
+The platform uses a **Master–Worker architecture** over LAN, where a master node orchestrates training and aggregates model weights from one or more worker nodes using the FedAvg algorithm.
 
-Computer Vision training workflow
+---
 
-ResNet18 fine-tuning
+## How It Works
 
-Model saving
+```
+Master (your Mac)
+│
+│  1. Setup wizard — choose dataset, rounds, epochs, lr
+│  2. Loads pretrained ResNet18, broadcasts global weights
+│
+└──► Worker (second Mac)
+         Receives weights
+         Trains on its local data for N epochs
+         Sends updated weights back
+│
+│  3. Master averages the weights (FedAvg)
+│  4. Evaluates accuracy on validation set
+│  5. Saves if improved
+│
+│  Repeat for N rounds
+│
+│  6. Final test evaluation
+│  7. Saves best_model_net.pth + summary_net.md
+```
 
-Device auto-detection (CPU / Apple MPS)
+---
 
-#### Project Structure
+## Project Structure
+
 ```
 SharedComputing/
 │
-├── ml/
-│   ├── train_cifar10.py
-│   ├── saved_model.pt        # Generated after training
-│   └── data/                 # CIFAR-10 downloads here
+├── master.py          # Master node — orchestrates training via FastAPI
+├── worker.py          # Worker node — trains locally, sends weights back
+├── predict.py         # Run inference on any image
 │
-├── requirements.txt
-└── README.md
+├── data/              # Your image dataset (ImageFolder format)
+│   ├── class_a/
+│   ├── class_b/
+│   └── class_c/
+│
+├── models/
+│   └── best_model_net.pth   # Saved after training
+│
+└── summary_net.md     # Per-round training log (generated after training)
 ```
-#### Tech Stack
 
-Python 3.11
+---
 
-PyTorch
+## Tech Stack
 
-Torchvision
+- Python 3.11
+- PyTorch + Torchvision
+- FastAPI + Uvicorn
+- ResNet18 (transfer learning, frozen backbone)
+- FedAvg weight aggregation
+- Apple Silicon MPS / CUDA / CPU auto-detection
+- NumPy < 2
 
-NumPy (< 2)
+---
 
-tqdm
+## Setup
 
-Apple Silicon MPS (if available)
+### Master Mac
 
-#### Setup (Mac)
+> If your project folder path contains spaces (e.g. `2. Area`), create the venv outside it to avoid Python path errors.
+
+```bash
 cd SharedComputing
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-pip install -r requirements.txt
-#### Train (CIFAR-10 Validation Phase)
-python ml/train_cifar10.py
-
-What happens:
-
-CIFAR-10 downloads automatically into ml/data/
-
-Pretrained ResNet18 loads
-
-Model trains for 5 epochs
-
-Final model saved to:
-
-ml/saved_model.pt
-
-### Test model with image on your own
-SharedComputing Setup
-1. Go to the project folder
-```
-bashcd ~/Documents/2.\ Area/SharedComputing
-```
-2. Create and activate a virtual environment
-```
-bashrm -rf .venv
-python3.11 -m venv .venv
-source .venv/bin/activate
-```
-You should see (.venv) in your terminal prompt.
-3. Install dependencies
-```
-bashpip3 install torch torchvision tqdm
+python3.11 -m venv ~/venv_shared
+source ~/venv_shared/bin/activate
+pip3 install torch torchvision certifi fastapi uvicorn requests
 pip3 install "numpy<2"
 ```
-4. Train the model (already done — skippable)
+
+### Worker Mac
+
+```bash
+brew install python@3.11
+cd SharedComputing
+rm -rf .venv
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip3 install torch torchvision certifi requests
+pip3 install "numpy<2"
 ```
-bashpython3 ml/train_cifar10.py
+
+> Every new terminal session, re-activate before running anything:
+> - Master: `source ~/venv_shared/bin/activate`
+> - Worker: `source .venv/bin/activate`
+
+---
+
+## Running
+
+### Order matters — follow these steps exactly
+
+**Step 1 — Start master:**
+
+```bash
+source ~/venv_shared/bin/activate
+cd ~/Documents/2.Area/SharedComputing
+python3 master.py
 ```
-5. Run a prediction
+
+The setup wizard will prompt you:
+
 ```
-bashpython3 ml/predict.py /path/to/image.jpg
+Dataset folder (default: ./data): ./data
+Rounds (default: 15): 30
+Local epochs per round (default: 2): 5
+Batch size (default: 8): 8
+Learning rate (default: 0.001): 0.001
+Round timeout (seconds) (default: 120): 120
 ```
-Drag an image from Finder into the terminal to get the path automatically.
 
-Every new terminal session: run source .venv/bin/activate before using python3 or pip3.
+Wait for `→ Press Enter when all workers are connected...` — **do not press Enter yet.**
 
-#### Current Status
+**Step 2 — Start worker (second Mac):**
 
-ML pipeline functional
+```bash
+source .venv/bin/activate
+cd ~/Documents/2.Areas/SharedComputing
+python3 worker.py
+```
 
-Model saving functional
+Enter the master IP when prompted — it's printed by the master on startup (e.g. `10.141.100.235`).
 
-Hardware acceleration supported
+**Step 3 — Once worker shows `✓ Registered`, press Enter on master.**
 
-Repository structured for distributed expansion
+Training begins automatically.
 
-#### Roadmap
+---
 
-Next development phases:
+## Restarting
 
-Extract training logic into reusable module
+If port 8000 is already in use from a previous run:
 
-Implement Master–Worker architecture
+```bash
+kill $(lsof -ti:8000)
+```
 
-Add weight aggregation
+Then re-run master as normal.
 
-LAN communication layer (FastAPI)
+---
 
-Performance-aware shard allocation
+## Dataset Format
 
-Web demo layer
+The `data/` folder must follow PyTorch's ImageFolder format — one subfolder per class:
 
-#### Vision
+```
+data/
+├── cats/
+│   ├── cat1.jpg
+│   └── cat2.jpg
+├── dogs/
+│   ├── dog1.jpg
+│   └── dog2.jpg
+└── horses/
+    ├── horse1.jpg
+    └── horse2.jpg
+```
 
-SharedComputing aims to:
+---
 
-Utilize idle local devices as distributed compute
+## Inference
 
-Automatically allocate workloads based on device performance
+```bash
+source ~/venv_shared/bin/activate
+python3 predict.py /path/to/image.jpg
+```
 
-Create a lightweight local AI training platform
+Output:
 
-Move toward a PaaS-style distributed AI system
+```
+  Image : /path/to/image.jpg
+  ──────────────────────────────
+  cats        55.8%  ███████████
+  dogs        44.2%  ████████
+  horses       0.0%
+  → Prediction: CATS
+```
+
+Drag an image from Finder into the terminal to get its path automatically.
+
+---
+
+## Hyperparameter Guide
+
+| Parameter | What it does | Recommended |
+|-----------|-------------|-------------|
+| Rounds | How many master–worker cycles to run | 20–30 |
+| Local epochs | How many passes through data per round | 3–5 |
+| Batch size | Images processed at once | 8 (low memory) |
+| Learning rate | Step size for weight updates | 0.001 |
+| Round timeout | Seconds master waits per round | 120 |
+
+---
+
+## Current Status
+
+- [x] Master–Worker federated architecture
+- [x] FedAvg weight aggregation
+- [x] Interactive setup wizard
+- [x] ResNet18 transfer learning
+- [x] Automatic train/val/test split
+- [x] Best model checkpointing
+- [x] Per-round training summary
+- [x] Image inference script
+- [x] Apple Silicon MPS support
+
+---
+
+## Roadmap
+
+- [ ] Support multiple workers simultaneously
+- [ ] Web UI for drag-and-drop inference
+- [ ] Performance-aware workload allocation
+- [ ] Support additional architectures (EfficientNet, ViT)
+- [ ] Docker deployment
+- [ ] PaaS-style distributed AI platform

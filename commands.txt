@@ -15,7 +15,7 @@ pip3 install "numpy<2"
 python3 master.py
 
 source ~/venv_shared/bin/activate
-cd ~/Documents/2.Area/SharedComputing
+cd ~/Documents/2Area/SharedComputing
 python3 master.py
 
 
