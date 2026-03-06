@@ -5,7 +5,6 @@ import certifi
 os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 ssl._create_default_https_context = ssl.create_default_context
 
-import io
 import time
 import threading
 import torch
@@ -17,7 +16,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
-import numpy as np
 import socket
 
 def get_local_ip():
@@ -39,15 +37,29 @@ CKPT_DIR    = BASE / "models"
 CKPT_PATH   = CKPT_DIR / "best_model_net.pth"
 SUMMARY     = BASE / "summary_net.md"
 
-# ── Config ────────────────────────────────────────────────────────────────────
-IMG_SIZE     = 224
-BATCH_SIZE   = 8
-ROUNDS       = 15
-LOCAL_EPOCHS = 2
-LR           = 1e-3
-SEED         = 42
-MASTER_HOST  = "0.0.0.0"
-MASTER_PORT  = 8000
+# ══════════════════════════════════════════════════════
+# ── CONFIG — edit these to customize your training ───
+# ══════════════════════════════════════════════════════
+
+ROUNDS        = 15    # how many aggregation rounds to run
+LOCAL_EPOCHS  = 2     # how many epochs each worker trains per round
+BATCH_SIZE    = 8     # images per batch (lower = less memory, slower)
+LR            = 1e-3  # learning rate (lower = more stable, slower)
+IMG_SIZE      = 224   # image resize (224 is standard for ResNet)
+SEED          = 42    # random seed for reproducibility
+
+# Train / val / test split percentages (must add up to 1.0)
+TRAIN_SPLIT  = 0.70
+VAL_SPLIT    = 0.15
+# test split is automatically the remainder
+
+# How long (seconds) to wait for all workers to submit before timing out a round
+ROUND_TIMEOUT = 300
+
+MASTER_HOST  = "0.0.0.0"   # don't change — listens on all interfaces
+MASTER_PORT  = 8000         # port workers connect to
+
+# ══════════════════════════════════════════════════════
 
 MASTER_DEVICE = (
     "mps"  if torch.backends.mps.is_available() else
@@ -65,14 +77,15 @@ val_transform = transforms.Compose([
 app = FastAPI()
 
 state = {
-    "global_weights": None,      # current global model weights (serialized)
-    "worker_updates": {},         # worker_id -> updated weights
-    "registered_workers": set(),  # worker IDs that have registered
-    "round": 0,
-    "rounds_total": ROUNDS,
-    "round_ready": threading.Event(),
-    "num_classes": None,
-    "classes": None,
+    "global_weights":     None,
+    "worker_updates":     {},
+    "registered_workers": set(),
+    "round":              0,
+    "round_ready":        threading.Event(),
+    "num_classes":        None,
+    "classes":            None,
+    # FIX: expose the seeded train indices so workers use the exact same split
+    "train_indices":      None,
 }
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -81,14 +94,22 @@ class RegisterRequest(BaseModel):
 
 class WeightsUpdate(BaseModel):
     worker_id: str
-    weights: dict  # key -> list (tensor serialized as nested list)
+    weights: dict
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def model_to_dict(model):
     return {k: v.cpu().tolist() for k, v in model.state_dict().items()}
 
-def dict_to_state(d):
-    return {k: torch.tensor(v) for k, v in d.items()}
+# FIX: preserve original tensor dtypes to avoid crash on integer buffers
+# (e.g. ResNet18's num_batches_tracked is a LongTensor, not float)
+def dict_to_state(d, reference_state=None):
+    result = {}
+    for k, v in d.items():
+        t = torch.tensor(v)
+        if reference_state is not None and k in reference_state:
+            t = t.to(dtype=reference_state[k].dtype)
+        result[k] = t
+    return result
 
 def build_model(num_classes):
     model = models.resnet18(weights=None)
@@ -117,14 +138,16 @@ def register(req: RegisterRequest):
     print(f"  ✓ Worker registered: {req.worker_id}  "
           f"(total: {len(state['registered_workers'])})")
     return {
-        "status": "ok",
-        "num_classes": state["num_classes"],
-        "classes": state["classes"],
-        "rounds": ROUNDS,
-        "local_epochs": LOCAL_EPOCHS,
-        "batch_size": BATCH_SIZE,
-        "img_size": IMG_SIZE,
-        "lr": LR,
+        "status":        "ok",
+        "num_classes":   state["num_classes"],
+        "classes":       state["classes"],
+        "rounds":        ROUNDS,
+        "local_epochs":  LOCAL_EPOCHS,
+        "batch_size":    BATCH_SIZE,
+        "img_size":      IMG_SIZE,
+        "lr":            LR,
+        # FIX: send the canonical train indices so all workers use the same split
+        "train_indices": state["train_indices"],
     }
 
 @app.get("/weights")
@@ -135,6 +158,13 @@ def get_weights():
 
 @app.post("/update")
 def receive_update(update: WeightsUpdate):
+    # FIX: ignore duplicate or late submissions from the same worker
+    if update.worker_id not in state["registered_workers"]:
+        raise HTTPException(status_code=400, detail="Unknown worker — register first")
+    if update.worker_id in state["worker_updates"]:
+        print(f"  ⚠ Duplicate update ignored from {update.worker_id}")
+        return {"status": "duplicate_ignored"}
+
     state["worker_updates"][update.worker_id] = update.weights
     print(f"  ← Received update from {update.worker_id}  "
           f"({len(state['worker_updates'])}/{len(state['registered_workers'])} workers done)")
@@ -145,13 +175,13 @@ def receive_update(update: WeightsUpdate):
 @app.get("/status")
 def status():
     return {
-        "round": state["round"],
-        "rounds_total": ROUNDS,
+        "round":              state["round"],
+        "rounds_total":       ROUNDS,
         "registered_workers": list(state["registered_workers"]),
-        "updates_received": list(state["worker_updates"].keys()),
+        "updates_received":   list(state["worker_updates"].keys()),
     }
 
-# ── Training orchestration (runs in background thread) ────────────────────────
+# ── Training orchestration ────────────────────────────────────────────────────
 def run_master():
     torch.manual_seed(SEED)
 
@@ -161,14 +191,17 @@ def run_master():
     state["classes"]     = full_dataset.classes
 
     total   = len(full_dataset)
-    n_train = int(0.70 * total)
-    n_val   = int(0.15 * total)
+    n_train = int(TRAIN_SPLIT * total)
+    n_val   = int(VAL_SPLIT * total)
     n_test  = total - n_train - n_val
 
-    _, val_set, test_set = random_split(
+    train_set, val_set, test_set = random_split(
         full_dataset, [n_train, n_val, n_test],
         generator=torch.Generator().manual_seed(SEED)
     )
+
+    # FIX: publish the exact train indices so workers use the same split
+    state["train_indices"] = list(train_set.indices)
 
     eval_dataset = datasets.ImageFolder(str(DATASET_DIR), transform=val_transform)
     val_loader   = DataLoader(Subset(eval_dataset, list(val_set.indices)),
@@ -176,7 +209,6 @@ def run_master():
     test_loader  = DataLoader(Subset(eval_dataset, list(test_set.indices)),
                               batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
-    # Global model — download pretrained weights once
     global_model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
     for param in global_model.parameters():
         param.requires_grad = False
@@ -186,45 +218,59 @@ def run_master():
     print(f"\n{'='*55}")
     print(f"  NETWORK DISTRIBUTED TRAINING (MASTER)")
     print(f"{'='*55}")
-    print(f"  Device   : {MASTER_DEVICE}")
-    print(f"  Classes  : {full_dataset.classes}")
-    print(f"  Dataset  : {total} images")
-    print(f"  Rounds   : {ROUNDS}  ×  {LOCAL_EPOCHS} local epoch(s)")
-    print(f"\n  Waiting for workers to connect at http://{LOCAL_IP}:{MASTER_PORT}")
-    print(f"  Workers can join by running: python3 worker.py")
-    print(f"  Press Ctrl+C to start training once workers are ready.\n")
+    print(f"  Device        : {MASTER_DEVICE}")
+    print(f"  Classes       : {full_dataset.classes}")
+    print(f"  Dataset       : {total} images  (train={n_train} val={n_val} test={n_test})")
+    print(f"  Rounds        : {ROUNDS}  ×  {LOCAL_EPOCHS} local epoch(s)")
+    print(f"  Batch size    : {BATCH_SIZE}")
+    print(f"  Learning rate : {LR}")
+    print(f"  Round timeout : {ROUND_TIMEOUT}s")
+    print(f"\n  Waiting for workers → http://{LOCAL_IP}:{MASTER_PORT}")
+    print(f"  Workers run: python3 worker.py\n")
 
-    # Wait for user to signal workers are connected
     try:
         input("  → Press Enter when all workers are connected...\n")
     except EOFError:
         pass
 
-    print(f"  Starting training with {len(state['registered_workers'])} worker(s)\n")
+    num_workers = len(state["registered_workers"])
+    print(f"  Starting training with {num_workers} worker(s)\n")
 
-    CKPT_DIR.mkdir(exist_ok=True)  # creates models/ if it doesn't exist
+    CKPT_DIR.mkdir(exist_ok=True)
     best_val_acc = 0.0
     history      = []
     train_start  = time.time()
 
+    reference_state = global_model.state_dict()  # used for dtype restoration
+
     for rnd in range(1, ROUNDS + 1):
         t0 = time.time()
-        state["round"]         = rnd
+        state["round"]          = rnd
         state["worker_updates"] = {}
         state["round_ready"].clear()
 
-        # Broadcast current weights (workers will poll /weights)
         state["global_weights"] = model_to_dict(global_model)
+        print(f"  Round {rnd}/{ROUNDS} — waiting for {num_workers} worker(s)...")
 
-        print(f"  Round {rnd}/{ROUNDS} — waiting for {len(state['registered_workers'])} worker(s)...")
+        # FIX: use timeout so a dropped worker doesn't hang the master forever
+        finished = state["round_ready"].wait(timeout=ROUND_TIMEOUT)
+        if not finished:
+            received = len(state["worker_updates"])
+            print(f"  ⚠ Timeout! Only {received}/{num_workers} workers responded. "
+                  f"Aggregating with available updates...")
+            if received == 0:
+                print(f"  ✗ No updates received for round {rnd} — skipping aggregation.")
+                continue
 
-        # Wait until all workers have submitted updates
-        state["round_ready"].wait()
-
-        # FedAvg
-        worker_states = [dict_to_state(w) for w in state["worker_updates"].values()]
+        # FIX: pass reference_state so integer buffers keep their correct dtype
+        worker_states = [
+            dict_to_state(w, reference_state)
+            for w in state["worker_updates"].values()
+        ]
         avg_state = {
-            key: torch.stack([ws[key].float() for ws in worker_states]).mean(dim=0)
+            key: torch.stack([ws[key].float() for ws in worker_states]).mean(dim=0).to(
+                dtype=reference_state[key].dtype
+            )
             for key in worker_states[0]
         }
         global_model.load_state_dict(avg_state)
@@ -238,7 +284,8 @@ def run_master():
             torch.save(global_model.state_dict(), CKPT_PATH)
 
         history.append(dict(round=rnd, val_loss=val_loss, val_acc=val_acc,
-                            elapsed=elapsed, saved=saved))
+                            elapsed=elapsed, saved=saved,
+                            workers_responded=len(state["worker_updates"])))
 
         print(f"  Round {rnd:>3}/{ROUNDS}  "
               f"val_loss={val_loss:.4f}  val_acc={val_acc:.3f}  "
@@ -246,7 +293,9 @@ def run_master():
 
     total_time = time.time() - train_start
 
-    global_model.load_state_dict(torch.load(CKPT_PATH, map_location=MASTER_DEVICE))
+    global_model.load_state_dict(
+        torch.load(CKPT_PATH, map_location=MASTER_DEVICE, weights_only=True)
+    )
     test_loss, test_acc = evaluate(global_model, test_loader)
 
     print(f"\n  Test  loss={test_loss:.4f}  acc={test_acc:.3f}")
@@ -255,7 +304,8 @@ def run_master():
     best = max(history, key=lambda r: r["val_acc"])
     rows = "\n".join(
         f"| {r['round']:>5} | {r['val_loss']:.4f} | {r['val_acc']:.3f} "
-        f"| {r['elapsed']:.1f}s | {'✓' if r['saved'] else ''} |"
+        f"| {r['elapsed']:.1f}s | {r['workers_responded']}/{num_workers} "
+        f"| {'✓' if r['saved'] else ''} |"
         for r in history
     )
     with open(SUMMARY, "w") as f:
@@ -267,8 +317,20 @@ def run_master():
 | Date | {time.strftime('%Y-%m-%d %H:%M:%S')} |
 | Master | {LOCAL_IP}:{MASTER_PORT} |
 | Workers | {list(state['registered_workers'])} |
-| Dataset | {total} images |
+| Dataset | {total} images (train={n_train}, val={n_val}, test={n_test}) |
 | Classes | {full_dataset.classes} |
+
+## Hyperparameters
+| Param | Value |
+|-------|-------|
+| Architecture | ResNet18 (transfer learning, frozen backbone) |
+| Image size | {IMG_SIZE}×{IMG_SIZE} |
+| Batch size | {BATCH_SIZE} |
+| Rounds | {ROUNDS} |
+| Local epochs per round | {LOCAL_EPOCHS} |
+| Learning rate | {LR} |
+| Aggregation | FedAvg |
+| Round timeout | {ROUND_TIMEOUT}s |
 
 ## Results
 | Metric | Value |
@@ -278,16 +340,14 @@ def run_master():
 | Total training time | {total_time:.1f}s |
 
 ## Per-round log
-| Round | Val Loss | Val Acc | Time | Saved |
-|------:|---------:|--------:|-----:|:-----:|
+| Round | Val Loss | Val Acc | Time | Workers | Saved |
+|------:|---------:|--------:|-----:|--------:|:-----:|
 {rows}
 """)
     print(f"  Summary → {SUMMARY}")
 
 
 if __name__ == "__main__":
-    # Start training loop in background thread
     t = threading.Thread(target=run_master, daemon=True)
     t.start()
-    # Start FastAPI server
     uvicorn.run(app, host=MASTER_HOST, port=MASTER_PORT)

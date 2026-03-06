@@ -16,11 +16,15 @@ import requests
 import socket
 
 # ── Config ────────────────────────────────────────────────────────────────────
-master_ip  = input("  Enter master IP address: ").strip()
-MASTER_URL = f"http://{master_ip}:8000"
-WORKER_ID  = socket.gethostname()          # uses this Mac's hostname automatically
+master_ip   = input("  Enter master IP address: ").strip()
+MASTER_URL  = f"http://{master_ip}:8000"
+WORKER_ID   = socket.gethostname()          # uses this machine's hostname automatically
 DATASET_DIR = Path(__file__).parent / "data"
 SEED        = 42
+
+# How many times to retry sending weights before giving up
+UPLOAD_RETRIES = 5
+UPLOAD_RETRY_DELAY = 3  # seconds between retries
 
 DEVICE = (
     "mps"  if torch.backends.mps.is_available() else
@@ -35,13 +39,21 @@ def build_model(num_classes):
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     return model
 
-def dict_to_state(d):
-    return {k: torch.tensor(v) for k, v in d.items()}
+# FIX: preserve original tensor dtypes to avoid crash on integer buffers
+# (e.g. ResNet18's num_batches_tracked is a LongTensor, not float)
+def dict_to_state(d, reference_state=None):
+    result = {}
+    for k, v in d.items():
+        t = torch.tensor(v)
+        if reference_state is not None and k in reference_state:
+            t = t.to(dtype=reference_state[k].dtype)
+        result[k] = t
+    return result
 
 def model_to_dict(model):
     return {k: v.cpu().tolist() for k, v in model.state_dict().items()}
 
-def get_train_loader(num_classes, classes, batch_size, img_size, local_epochs):
+def get_train_loader(train_indices, batch_size, img_size):
     train_transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.RandomHorizontalFlip(),
@@ -52,14 +64,27 @@ def get_train_loader(num_classes, classes, batch_size, img_size, local_epochs):
     ])
     dataset = datasets.ImageFolder(str(DATASET_DIR), transform=train_transform)
 
-    # Use 70% of data for training (same split logic as master)
-    total   = len(dataset)
-    n_train = int(0.70 * total)
-    indices = list(range(n_train))  # worker uses training portion
-
-    return DataLoader(Subset(dataset, indices),
+    # FIX: use the exact indices sent by master instead of a local re-split,
+    # guaranteeing workers never touch validation or test data
+    return DataLoader(Subset(dataset, train_indices),
                       batch_size=batch_size, shuffle=True, num_workers=0)
 
+# FIX: retry upload so a transient network blip doesn't hang the master forever
+def upload_weights_with_retry(worker_id, weights):
+    for attempt in range(1, UPLOAD_RETRIES + 1):
+        try:
+            resp = requests.post(f"{MASTER_URL}/update", json={
+                "worker_id": worker_id,
+                "weights":   weights,
+            }, timeout=30)
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            print(f"  ⚠ Upload attempt {attempt}/{UPLOAD_RETRIES} failed: {e}")
+            if attempt < UPLOAD_RETRIES:
+                time.sleep(UPLOAD_RETRY_DELAY)
+    print("  ✗ All upload attempts failed — master may have timed out this round.")
+    return False
 
 def main():
     print(f"\n{'='*55}")
@@ -74,45 +99,51 @@ def main():
     while True:
         try:
             resp = requests.post(f"{MASTER_URL}/register",
-                                 json={"worker_id": WORKER_ID})
+                                 json={"worker_id": WORKER_ID}, timeout=10)
+            resp.raise_for_status()
             config = resp.json()
             break
-        except Exception:
-            print("  Master not reachable yet, retrying in 3s...")
+        except Exception as e:
+            print(f"  Master not reachable yet ({e}), retrying in 3s...")
             time.sleep(3)
 
-    num_classes  = config["num_classes"]
-    classes      = config["classes"]
-    rounds       = config["rounds"]
-    local_epochs = config["local_epochs"]
-    batch_size   = config["batch_size"]
-    img_size     = config["img_size"]
-    lr           = config["lr"]
+    num_classes   = config["num_classes"]
+    classes       = config["classes"]
+    rounds        = config["rounds"]
+    local_epochs  = config["local_epochs"]
+    batch_size    = config["batch_size"]
+    img_size      = config["img_size"]
+    lr            = config["lr"]
+    # FIX: use master's canonical train indices — same split, no data leakage
+    train_indices = config["train_indices"]
 
     print(f"  ✓ Registered — {num_classes} classes: {classes}")
-    print(f"  Rounds: {rounds}  |  Local epochs: {local_epochs}\n")
+    print(f"  Rounds: {rounds}  |  Local epochs: {local_epochs}")
+    print(f"  Training on {len(train_indices)} images (master-assigned split)\n")
 
-    train_loader = get_train_loader(num_classes, classes, batch_size, img_size, local_epochs)
+    train_loader = get_train_loader(train_indices, batch_size, img_size)
     model        = build_model(num_classes).to(DEVICE)
     criterion    = nn.CrossEntropyLoss()
-
-    last_round = 0
+    reference_state = model.state_dict()  # used for dtype restoration
 
     # ── Training rounds ───────────────────────────────────────────────────────
     for rnd in range(1, rounds + 1):
-        # Poll master for new weights
+        # Poll master for new weights for this round
         print(f"  Waiting for round {rnd} weights...")
         while True:
             try:
-                resp = requests.get(f"{MASTER_URL}/weights").json()
-                if resp["round"] == rnd:
+                resp = requests.get(f"{MASTER_URL}/weights", timeout=10).json()
+                # FIX: use >= to avoid missing a round if polling is slightly slow
+                if resp["round"] >= rnd:
                     break
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  ⚠ Poll error: {e}")
             time.sleep(1)
 
-        # Load global weights
-        model.load_state_dict(dict_to_state(resp["weights"]))
+        # FIX: restore dtypes using reference_state
+        model.load_state_dict(dict_to_state(resp["weights"], reference_state))
+
+        # Reinitialise optimizer each round (global weights may have shifted a lot)
         optimizer = optim.Adam(model.fc.parameters(), lr=lr)
 
         # Train locally
@@ -136,12 +167,10 @@ def main():
 
         elapsed = time.time() - t0
 
-        # Send updated weights to master
-        requests.post(f"{MASTER_URL}/update", json={
-            "worker_id": WORKER_ID,
-            "weights":   model_to_dict(model)
-        })
-        print(f"  → Round {rnd}/{rounds} done ({elapsed:.1f}s) — weights sent to master\n")
+        # FIX: retry upload rather than fire-and-forget
+        success = upload_weights_with_retry(WORKER_ID, model_to_dict(model))
+        status  = "weights sent" if success else "upload failed"
+        print(f"  → Round {rnd}/{rounds} done ({elapsed:.1f}s) — {status}\n")
 
     print("  ✓ All rounds complete.")
 
