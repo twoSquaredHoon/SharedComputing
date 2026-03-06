@@ -43,35 +43,56 @@ VAL_SPLIT   = 0.15
 MASTER_HOST = "0.0.0.0"
 MASTER_PORT = 8000
 
-# ── Interactive setup wizard ───────────────────────────────────────────────────
-def prompt(label, default, cast=str):
-    raw = input(f"  {label} (default: {default}): ").strip()
-    if raw == "":
-        return cast(default)
-    try:
-        return cast(raw)
-    except ValueError:
-        print(f"  ⚠ Invalid input, using default: {default}")
-        return cast(default)
+# ── Argument parsing (supports both CLI args and interactive wizard) ───────────
+import argparse
 
 def run_setup():
+    parser = argparse.ArgumentParser(description="SharedComputing Master Node")
+    parser.add_argument("--dataset",  type=str,   default=None)
+    parser.add_argument("--rounds",   type=int,   default=None)
+    parser.add_argument("--epochs",   type=int,   default=None)
+    parser.add_argument("--batch",    type=int,   default=None)
+    parser.add_argument("--lr",       type=float, default=None)
+    parser.add_argument("--timeout",  type=int,   default=None)
+    args = parser.parse_args()
+
+    # If all args provided (e.g. launched from Swift app), skip wizard
+    if all(v is not None for v in vars(args).values()):
+        dataset_dir = Path(args.dataset)
+        if not dataset_dir.is_absolute():
+            dataset_dir = BASE / dataset_dir
+        return dataset_dir, args.rounds, args.epochs, args.batch, args.lr, args.timeout
+
+    # Otherwise run interactive wizard for any missing values
     print(f"\n{'='*55}")
     print(f"  FEDERATED TRAINING — SETUP")
     print(f"{'='*55}")
     print(f"  Press Enter to accept defaults.\n")
-    while True:
-        raw = input(f"  Dataset folder (default: ./data): ").strip()
-        dataset_dir = Path(raw) if raw else BASE / "data"
-        if not dataset_dir.is_absolute():
-            dataset_dir = BASE / dataset_dir
-        if dataset_dir.exists():
-            break
-        print(f"  ⚠ Folder not found: {dataset_dir}  — please try again.")
-    rounds       = prompt("Rounds",                  15,    int)
-    local_epochs = prompt("Local epochs per round",   2,    int)
-    batch_size   = prompt("Batch size",               8,    int)
-    lr           = prompt("Learning rate",            1e-3, float)
-    timeout      = prompt("Round timeout (seconds)", 60,    int)
+
+    def prompt(label, default, cast=str):
+        raw = input(f"  {label} (default: {default}): ").strip()
+        if raw == "": return cast(default)
+        try: return cast(raw)
+        except ValueError:
+            print(f"  ⚠ Invalid input, using default: {default}")
+            return cast(default)
+
+    if args.dataset:
+        dataset_dir = Path(args.dataset)
+    else:
+        while True:
+            raw = input(f"  Dataset folder (default: ./data): ").strip()
+            dataset_dir = Path(raw) if raw else BASE / "data"
+            if not dataset_dir.is_absolute():
+                dataset_dir = BASE / dataset_dir
+            if dataset_dir.exists(): break
+            print(f"  ⚠ Folder not found: {dataset_dir}  — please try again.")
+
+    rounds       = args.rounds   or prompt("Rounds",                  15,    int)
+    local_epochs = args.epochs   or prompt("Local epochs per round",   2,    int)
+    batch_size   = args.batch    or prompt("Batch size",               8,    int)
+    lr           = args.lr       or prompt("Learning rate",            1e-3, float)
+    timeout      = args.timeout  or prompt("Round timeout (seconds)", 120,   int)
     print()
     return dataset_dir, rounds, local_epochs, batch_size, lr, timeout
 
@@ -95,6 +116,7 @@ app = FastAPI()
 
 state = {
     "global_weights":     None,
+    "start_event":        threading.Event(),
     "worker_updates":     {},
     "registered_workers": set(),
     "round":              0,
@@ -187,6 +209,11 @@ def receive_update(update: WeightsUpdate):
           f"({len(state['worker_updates'])}/{len(state['registered_workers'])} workers done)")
     if len(state["worker_updates"]) >= len(state["registered_workers"]):
         state["round_ready"].set()
+    return {"status": "ok"}
+
+@app.post("/start")
+def start_training():
+    state["start_event"].set()
     return {"status": "ok"}
 
 @app.get("/status")
