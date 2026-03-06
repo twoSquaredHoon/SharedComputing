@@ -130,18 +130,22 @@ def main():
     for rnd in range(1, rounds + 1):
         # Poll master for new weights for this round
         print(f"  Waiting for round {rnd} weights...")
+        weights_resp = None
         while True:
             try:
-                resp = requests.get(f"{MASTER_URL}/weights", timeout=10).json()
-                # FIX: use >= to avoid missing a round if polling is slightly slow
-                if resp["round"] >= rnd:
-                    break
+                r = requests.get(f"{MASTER_URL}/weights", timeout=60)
+                if r.status_code == 200:
+                    data = r.json()
+                    if data.get("round", -1) >= rnd:
+                        weights_resp = data
+                        break
+                # 503 = weights not ready yet, just keep polling
             except Exception as e:
                 print(f"  ⚠ Poll error: {e}")
             time.sleep(1)
 
         # FIX: restore dtypes using reference_state
-        model.load_state_dict(dict_to_state(resp["weights"], reference_state))
+        model.load_state_dict(dict_to_state(weights_resp["weights"], reference_state))
 
         # Reinitialise optimizer each round (global weights may have shifted a lot)
         optimizer = optim.Adam(model.fc.parameters(), lr=lr)
