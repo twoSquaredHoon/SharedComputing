@@ -1,0 +1,556 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		D4F443FA2F5AC5C40093862E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D4F443E02F5AC5C30093862E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D4F443E72F5AC5C30093862E;
+			remoteInfo = SharedComputingMac;
+		};
+		D4F444042F5AC5C40093862E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D4F443E02F5AC5C30093862E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D4F443E72F5AC5C30093862E;
+			remoteInfo = SharedComputingMac;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		D4F443E82F5AC5C30093862E /* SharedComputingMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SharedComputingMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4F443F92F5AC5C40093862E /* SharedComputingMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SharedComputingMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4F444032F5AC5C40093862E /* SharedComputingMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SharedComputingMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		D4F443EA2F5AC5C30093862E /* SharedComputingMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SharedComputingMac;
+			sourceTree = "<group>";
+		};
+		D4F443FC2F5AC5C40093862E /* SharedComputingMacTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SharedComputingMacTests;
+			sourceTree = "<group>";
+		};
+		D4F444062F5AC5C40093862E /* SharedComputingMacUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SharedComputingMacUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D4F443E52F5AC5C30093862E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F443F62F5AC5C40093862E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F444002F5AC5C40093862E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D4F443DF2F5AC5C30093862E = {
+			isa = PBXGroup;
+			children = (
+				D4F443EA2F5AC5C30093862E /* SharedComputingMac */,
+				D4F443FC2F5AC5C40093862E /* SharedComputingMacTests */,
+				D4F444062F5AC5C40093862E /* SharedComputingMacUITests */,
+				D4F443E92F5AC5C30093862E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D4F443E92F5AC5C30093862E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D4F443E82F5AC5C30093862E /* SharedComputingMac.app */,
+				D4F443F92F5AC5C40093862E /* SharedComputingMacTests.xctest */,
+				D4F444032F5AC5C40093862E /* SharedComputingMacUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D4F443E72F5AC5C30093862E /* SharedComputingMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D4F4440D2F5AC5C40093862E /* Build configuration list for PBXNativeTarget "SharedComputingMac" */;
+			buildPhases = (
+				D4F443E42F5AC5C30093862E /* Sources */,
+				D4F443E52F5AC5C30093862E /* Frameworks */,
+				D4F443E62F5AC5C30093862E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D4F443EA2F5AC5C30093862E /* SharedComputingMac */,
+			);
+			name = SharedComputingMac;
+			packageProductDependencies = (
+			);
+			productName = SharedComputingMac;
+			productReference = D4F443E82F5AC5C30093862E /* SharedComputingMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D4F443F82F5AC5C40093862E /* SharedComputingMacTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D4F444102F5AC5C40093862E /* Build configuration list for PBXNativeTarget "SharedComputingMacTests" */;
+			buildPhases = (
+				D4F443F52F5AC5C40093862E /* Sources */,
+				D4F443F62F5AC5C40093862E /* Frameworks */,
+				D4F443F72F5AC5C40093862E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D4F443FB2F5AC5C40093862E /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D4F443FC2F5AC5C40093862E /* SharedComputingMacTests */,
+			);
+			name = SharedComputingMacTests;
+			packageProductDependencies = (
+			);
+			productName = SharedComputingMacTests;
+			productReference = D4F443F92F5AC5C40093862E /* SharedComputingMacTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		D4F444022F5AC5C40093862E /* SharedComputingMacUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D4F444132F5AC5C40093862E /* Build configuration list for PBXNativeTarget "SharedComputingMacUITests" */;
+			buildPhases = (
+				D4F443FF2F5AC5C40093862E /* Sources */,
+				D4F444002F5AC5C40093862E /* Frameworks */,
+				D4F444012F5AC5C40093862E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D4F444052F5AC5C40093862E /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D4F444062F5AC5C40093862E /* SharedComputingMacUITests */,
+			);
+			name = SharedComputingMacUITests;
+			packageProductDependencies = (
+			);
+			productName = SharedComputingMacUITests;
+			productReference = D4F444032F5AC5C40093862E /* SharedComputingMacUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D4F443E02F5AC5C30093862E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1620;
+				LastUpgradeCheck = 1620;
+				TargetAttributes = {
+					D4F443E72F5AC5C30093862E = {
+						CreatedOnToolsVersion = 16.2;
+					};
+					D4F443F82F5AC5C40093862E = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = D4F443E72F5AC5C30093862E;
+					};
+					D4F444022F5AC5C40093862E = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = D4F443E72F5AC5C30093862E;
+					};
+				};
+			};
+			buildConfigurationList = D4F443E32F5AC5C30093862E /* Build configuration list for PBXProject "SharedComputingMac" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D4F443DF2F5AC5C30093862E;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D4F443E92F5AC5C30093862E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D4F443E72F5AC5C30093862E /* SharedComputingMac */,
+				D4F443F82F5AC5C40093862E /* SharedComputingMacTests */,
+				D4F444022F5AC5C40093862E /* SharedComputingMacUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D4F443E62F5AC5C30093862E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F443F72F5AC5C40093862E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F444012F5AC5C40093862E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D4F443E42F5AC5C30093862E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F443F52F5AC5C40093862E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F443FF2F5AC5C40093862E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D4F443FB2F5AC5C40093862E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D4F443E72F5AC5C30093862E /* SharedComputingMac */;
+			targetProxy = D4F443FA2F5AC5C40093862E /* PBXContainerItemProxy */;
+		};
+		D4F444052F5AC5C40093862E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D4F443E72F5AC5C30093862E /* SharedComputingMac */;
+			targetProxy = D4F444042F5AC5C40093862E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		D4F4440B2F5AC5C40093862E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		D4F4440C2F5AC5C40093862E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		D4F4440E2F5AC5C40093862E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SharedComputingMac/SharedComputingMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"SharedComputingMac/Preview Content\"";
+				DEVELOPMENT_TEAM = 2V52XHL6KN;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = shl.SharedComputingMac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D4F4440F2F5AC5C40093862E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SharedComputingMac/SharedComputingMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"SharedComputingMac/Preview Content\"";
+				DEVELOPMENT_TEAM = 2V52XHL6KN;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = shl.SharedComputingMac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		D4F444112F5AC5C40093862E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2V52XHL6KN;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = shl.SharedComputingMacTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SharedComputingMac.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SharedComputingMac";
+			};
+			name = Debug;
+		};
+		D4F444122F5AC5C40093862E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2V52XHL6KN;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = shl.SharedComputingMacTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SharedComputingMac.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SharedComputingMac";
+			};
+			name = Release;
+		};
+		D4F444142F5AC5C40093862E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2V52XHL6KN;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = shl.SharedComputingMacUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = SharedComputingMac;
+			};
+			name = Debug;
+		};
+		D4F444152F5AC5C40093862E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2V52XHL6KN;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = shl.SharedComputingMacUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = SharedComputingMac;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		D4F443E32F5AC5C30093862E /* Build configuration list for PBXProject "SharedComputingMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D4F4440B2F5AC5C40093862E /* Debug */,
+				D4F4440C2F5AC5C40093862E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D4F4440D2F5AC5C40093862E /* Build configuration list for PBXNativeTarget "SharedComputingMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D4F4440E2F5AC5C40093862E /* Debug */,
+				D4F4440F2F5AC5C40093862E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D4F444102F5AC5C40093862E /* Build configuration list for PBXNativeTarget "SharedComputingMacTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D4F444112F5AC5C40093862E /* Debug */,
+				D4F444122F5AC5C40093862E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D4F444132F5AC5C40093862E /* Build configuration list for PBXNativeTarget "SharedComputingMacUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D4F444142F5AC5C40093862E /* Debug */,
+				D4F444152F5AC5C40093862E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D4F443E02F5AC5C30093862E /* Project object */;
+}
