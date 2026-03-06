@@ -31,35 +31,52 @@ def get_local_ip():
 LOCAL_IP = get_local_ip()
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-BASE        = Path(__file__).parent
-DATASET_DIR = BASE / "data"
-CKPT_DIR    = BASE / "models"
-CKPT_PATH   = CKPT_DIR / "best_model_net.pth"
-SUMMARY     = BASE / "summary_net.md"
+BASE     = Path(__file__).parent
+CKPT_DIR = BASE / "models"
+SUMMARY  = BASE / "summary_net.md"
 
-# ══════════════════════════════════════════════════════
-# ── CONFIG — edit these to customize your training ───
-# ══════════════════════════════════════════════════════
+# ── Fixed settings ─────────────────────────────────────────────────────────────
+IMG_SIZE    = 224
+SEED        = 42
+TRAIN_SPLIT = 0.70
+VAL_SPLIT   = 0.15
+MASTER_HOST = "0.0.0.0"
+MASTER_PORT = 8000
 
-ROUNDS        = 15    # how many aggregation rounds to run
-LOCAL_EPOCHS  = 2     # how many epochs each worker trains per round
-BATCH_SIZE    = 8     # images per batch (lower = less memory, slower)
-LR            = 1e-3  # learning rate (lower = more stable, slower)
-IMG_SIZE      = 224   # image resize (224 is standard for ResNet)
-SEED          = 42    # random seed for reproducibility
+# ── Interactive setup wizard ───────────────────────────────────────────────────
+def prompt(label, default, cast=str):
+    raw = input(f"  {label} (default: {default}): ").strip()
+    if raw == "":
+        return cast(default)
+    try:
+        return cast(raw)
+    except ValueError:
+        print(f"  ⚠ Invalid input, using default: {default}")
+        return cast(default)
 
-# Train / val / test split percentages (must add up to 1.0)
-TRAIN_SPLIT  = 0.70
-VAL_SPLIT    = 0.15
-# test split is automatically the remainder
+def run_setup():
+    print(f"\n{'='*55}")
+    print(f"  FEDERATED TRAINING — SETUP")
+    print(f"{'='*55}")
+    print(f"  Press Enter to accept defaults.\n")
+    while True:
+        raw = input(f"  Dataset folder (default: ./data): ").strip()
+        dataset_dir = Path(raw) if raw else BASE / "data"
+        if not dataset_dir.is_absolute():
+            dataset_dir = BASE / dataset_dir
+        if dataset_dir.exists():
+            break
+        print(f"  ⚠ Folder not found: {dataset_dir}  — please try again.")
+    rounds       = prompt("Rounds",                  15,    int)
+    local_epochs = prompt("Local epochs per round",   2,    int)
+    batch_size   = prompt("Batch size",               8,    int)
+    lr           = prompt("Learning rate",            1e-3, float)
+    timeout      = prompt("Round timeout (seconds)", 60,    int)
+    print()
+    return dataset_dir, rounds, local_epochs, batch_size, lr, timeout
 
-# How long (seconds) to wait for all workers to submit before timing out a round
-ROUND_TIMEOUT = 300
-
-MASTER_HOST  = "0.0.0.0"   # don't change — listens on all interfaces
-MASTER_PORT  = 8000         # port workers connect to
-
-# ══════════════════════════════════════════════════════
+DATASET_DIR, ROUNDS, LOCAL_EPOCHS, BATCH_SIZE, LR, ROUND_TIMEOUT = run_setup()
+CKPT_PATH = CKPT_DIR / "best_model_net.pth"
 
 MASTER_DEVICE = (
     "mps"  if torch.backends.mps.is_available() else
@@ -84,8 +101,8 @@ state = {
     "round_ready":        threading.Event(),
     "num_classes":        None,
     "classes":            None,
-    # FIX: expose the seeded train indices so workers use the exact same split
     "train_indices":      None,
+    "config":             {"rounds": ROUNDS},
 }
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -176,7 +193,7 @@ def receive_update(update: WeightsUpdate):
 def status():
     return {
         "round":              state["round"],
-        "rounds_total":       ROUNDS,
+        "rounds_total":       state["config"]["rounds"],
         "registered_workers": list(state["registered_workers"]),
         "updates_received":   list(state["worker_updates"].keys()),
     }
