@@ -171,7 +171,7 @@ def register(req: RegisterRequest):
 def get_weights():
     if state["global_weights"] is None:
         raise HTTPException(status_code=503, detail="Weights not ready yet")
-    return {"round": state["round"], "weights": state["global_weights"]}
+    return {"round": state["round"], "weights": state["global_weights"], "done": state["round"] > ROUNDS}
 
 @app.post("/update")
 def receive_update(update: WeightsUpdate):
@@ -264,12 +264,14 @@ def run_master():
         t0 = time.time()
         state["round"]          = rnd
         state["worker_updates"] = {}
-        state["round_ready"].clear()
 
+        # serialize weights BEFORE clearing event so timeout starts after
+        # weights are actually available to workers
+        print(f"  Round {rnd}/{ROUNDS} — serializing weights...")
         state["global_weights"] = model_to_dict(global_model)
+        state["round_ready"].clear()
         print(f"  Round {rnd}/{ROUNDS} — waiting for {num_workers} worker(s)...")
 
-        # FIX: use timeout so a dropped worker doesn't hang the master forever
         finished = state["round_ready"].wait(timeout=ROUND_TIMEOUT)
         if not finished:
             received = len(state["worker_updates"])

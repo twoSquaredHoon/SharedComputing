@@ -136,6 +136,9 @@ def main():
                 r = requests.get(f"{MASTER_URL}/weights", timeout=60)
                 if r.status_code == 200:
                     data = r.json()
+                    if data.get("done"):
+                        print("  Master signalled training complete.")
+                        return
                     if data.get("round", -1) >= rnd:
                         weights_resp = data
                         break
