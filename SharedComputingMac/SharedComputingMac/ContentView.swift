@@ -359,6 +359,8 @@ class TrainerViewModel: ObservableObject {
     @Published var workerCount: Int        = 0
 
     private var process: Process?
+    private var masterFileHandle: FileHandle?
+    private var slaveFd: Int32 = -1
     private var ptyMasterFd: Int32 = -1
     @Published var masterScriptPath: String = ""
 
@@ -422,19 +424,38 @@ class TrainerViewModel: ObservableObject {
             "--timeout", "\(timeout)",
         ]
 
+        // Clean up any previous run
+        cleanup()
+
         process = Process()
         process?.executableURL = URL(fileURLWithPath: pythonPath)
         process?.arguments = args
+        process?.currentDirectoryURL = URL(fileURLWithPath:
+            (masterScriptPath as NSString).deletingLastPathComponent)
+
+        // Propagate environment + force unbuffered Python output
+        var env = ProcessInfo.processInfo.environment
+        env["PYTHONUNBUFFERED"] = "1"
+        process?.environment = env
 
         // Use a PTY so the process gets a real terminal (stdin works)
-        let masterFd = openpty()
-        process?.standardOutput = FileHandle(fileDescriptor: masterFd.slave)
-        process?.standardError  = FileHandle(fileDescriptor: masterFd.slave)
-        process?.standardInput  = FileHandle(fileDescriptor: masterFd.slave)
-        self.ptyMasterFd = masterFd.master
+        let ptyFds = openpty()
+        guard ptyFds.master >= 0, ptyFds.slave >= 0 else {
+            statusMessage = "✗ Failed to allocate PTY"
+            return
+        }
 
-        let masterHandle = FileHandle(fileDescriptor: masterFd.master)
-        masterHandle.readabilityHandler = { [weak self] handle in
+        self.ptyMasterFd = ptyFds.master
+        self.slaveFd = ptyFds.slave
+
+        let slaveHandle = FileHandle(fileDescriptor: ptyFds.slave, closeOnDealloc: false)
+        process?.standardOutput = slaveHandle
+        process?.standardError  = slaveHandle
+        process?.standardInput  = slaveHandle
+
+        // Retain the FileHandle so readabilityHandler survives start() scope
+        masterFileHandle = FileHandle(fileDescriptor: ptyFds.master, closeOnDealloc: false)
+        masterFileHandle?.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
             DispatchQueue.main.async {
@@ -453,6 +474,7 @@ class TrainerViewModel: ObservableObject {
 
         process?.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
+                self?.cleanup()
                 self?.isRunning = false
                 self?.statusMessage = "Training finished."
             }
@@ -467,32 +489,40 @@ class TrainerViewModel: ObservableObject {
 
         do {
             try process?.run()
+            // Close slave fd in parent — child inherited it via fork
+            close(slaveFd)
+            slaveFd = -1
             isRunning = true
             statusMessage = "Training started — connect workers then click Begin Training."
             log += "▶ Started: \(pythonPath) \(args.dropFirst().joined(separator: " "))\n\n"
         } catch {
             statusMessage = "✗ Failed to start: \(error.localizedDescription)"
+            cleanup()
         }
-    }
-
-    func sendStart() {
-        guard let ip = masterIP else { return }
-        guard let url = URL(string: "http://\(ip):8000/start") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        URLSession.shared.dataTask(with: request) { [weak self] _, _, _ in
-            DispatchQueue.main.async {
-                self?.waitingForWorkers = false
-                self?.log += "\n  → Start signal sent to master.\n"
-            }
-        }.resume()
     }
 
     func stop() {
         process?.terminate()
+        cleanup()
         isRunning = false
         statusMessage = "Training stopped."
         log += "\n⛔ Stopped by user.\n"
+    }
+
+    private func cleanup() {
+        masterFileHandle?.readabilityHandler = nil
+        masterFileHandle = nil
+        if slaveFd >= 0 {
+            close(slaveFd)
+            slaveFd = -1
+        }
+        if ptyMasterFd >= 0 {
+            close(ptyMasterFd)
+            ptyMasterFd = -1
+        }
+        process = nil
+        workerCount = 0
+        masterIP = nil
     }
 
     func sendEnter() {

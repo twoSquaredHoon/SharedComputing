@@ -1,6 +1,9 @@
 # Virtual environment
 .venv/
 
+# Personal update logs
+updates/
+
 # Data & datasets (too large for git)
 data/
 archive/
