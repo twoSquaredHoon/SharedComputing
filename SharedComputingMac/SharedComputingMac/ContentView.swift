@@ -8,201 +8,490 @@ struct SharedComputingApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(minWidth: 700, minHeight: 600)
+                .frame(minWidth: 900, minHeight: 700)
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
     }
 }
 
-// MARK: - Content View
+// MARK: - Content View (Root)
 
 struct ContentView: View {
     @StateObject private var trainer = TrainerViewModel()
 
     var body: some View {
-        HSplitView {
-            SetupPanel(trainer: trainer)
-                .frame(minWidth: 300, maxWidth: 340)
-            LogPanel(trainer: trainer)
-                .frame(minWidth: 360)
+        VStack(spacing: 0) {
+            // Top toolbar: mode toggle + step indicators
+            TopToolbar(trainer: trainer)
+            Divider()
+
+            if trainer.viewMode == .fourScreen {
+                FourScreenGrid(trainer: trainer)
+            } else {
+                SequentialWizard(trainer: trainer)
+            }
         }
         .background(Color(NSColor.windowBackgroundColor))
     }
 }
 
-// MARK: - Setup Panel
+// MARK: - Top Toolbar
 
-struct SetupPanel: View {
+struct TopToolbar: View {
     @ObservedObject var trainer: TrainerViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-
-            // Header
-            HStack(spacing: 10) {
+        HStack(spacing: 12) {
+            // App icon + title
+            HStack(spacing: 8) {
                 Image(systemName: "cpu")
-                    .font(.title2)
+                    .font(.title3)
                     .foregroundColor(.accentColor)
                 Text("SharedComputing")
-                    .font(.title2)
+                    .font(.title3)
                     .fontWeight(.semibold)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 20)
 
-            Divider()
+            Spacer()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+            // Step indicators (sequential mode only)
+            if trainer.viewMode == .sequential {
+                HStack(spacing: 4) {
+                    ForEach(1...4, id: \.self) { step in
+                        StepIndicator(
+                            step: step,
+                            label: stepLabel(step),
+                            isActive: trainer.currentScreen == step,
+                            isCompleted: trainer.currentScreen > step
+                        )
+                        .onTapGesture { trainer.currentScreen = step }
 
-                    // Dataset
-                    SectionHeader("Dataset")
-                    DatasetPicker(trainer: trainer)
-
-                    Divider().padding(.vertical, 4)
-
-                    // Training config
-                    SectionHeader("Training")
-                    StepperField(label: "Rounds", value: $trainer.rounds, range: 1...200)
-                    StepperField(label: "Local epochs per round", value: $trainer.localEpochs, range: 1...50)
-                    StepperField(label: "Batch size", value: $trainer.batchSize, range: 1...128)
-
-                    Divider().padding(.vertical, 4)
-
-                    // Advanced
-                    SectionHeader("Advanced")
-                    LRField(lr: $trainer.lr)
-                    StepperField(label: "Round timeout (s)", value: $trainer.timeout, range: 30...600)
-
-                    Divider().padding(.vertical, 4)
-
-                    // Python path
-                    SectionHeader("Python")
-                    PythonPathField(trainer: trainer)
-
+                        if step < 4 {
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
-                .padding(20)
             }
 
+            Spacer()
+
+            // Mode toggle
+            Picker("View", selection: $trainer.viewMode) {
+                Label("Sequential", systemImage: "list.number")
+                    .tag(ViewMode.sequential)
+                Label("4-Screen", systemImage: "square.grid.2x2")
+                    .tag(ViewMode.fourScreen)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private func stepLabel(_ step: Int) -> String {
+        switch step {
+        case 1: return "Setup"
+        case 2: return "Model"
+        case 3: return "Connect"
+        case 4: return "Results"
+        default: return ""
+        }
+    }
+}
+
+struct StepIndicator: View {
+    let step: Int
+    let label: String
+    let isActive: Bool
+    let isCompleted: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ZStack {
+                Circle()
+                    .fill(isActive ? Color.accentColor : (isCompleted ? Color.green : Color.secondary.opacity(0.3)))
+                    .frame(width: 22, height: 22)
+                if isCompleted {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                } else {
+                    Text("\(step)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(isActive ? .white : .secondary)
+                }
+            }
+            Text(label)
+                .font(.caption)
+                .fontWeight(isActive ? .semibold : .regular)
+                .foregroundColor(isActive ? .primary : .secondary)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isActive ? Color.accentColor.opacity(0.1) : Color.clear)
+        )
+    }
+}
+
+// MARK: - Sequential Wizard
+
+struct SequentialWizard: View {
+    @ObservedObject var trainer: TrainerViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Screen content
+            Group {
+                switch trainer.currentScreen {
+                case 1: Screen1_DatasetSetupView(trainer: trainer)
+                case 2: Screen2_ModelTrainingView(trainer: trainer)
+                case 3: Screen3_DeviceConnectionView(trainer: trainer)
+                case 4: Screen4_ResultsView(trainer: trainer)
+                default: Screen1_DatasetSetupView(trainer: trainer)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
             Divider()
 
-            // Start / Stop button
-            VStack(spacing: 8) {
-                Button(action: trainer.isRunning ? trainer.stop : trainer.start) {
-                    HStack {
-                        Image(systemName: trainer.isRunning ? "stop.fill" : "play.fill")
-                        Text(trainer.isRunning ? "Stop Training" : "Start Training")
-                            .fontWeight(.medium)
+            // Navigation buttons
+            HStack {
+                if trainer.currentScreen > 1 {
+                    Button(action: { trainer.currentScreen -= 1 }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(trainer.isRunning ? .red : .accentColor)
-                .disabled(trainer.datasetPath.isEmpty && !trainer.isRunning)
 
-                if let status = trainer.statusMessage {
-                    Text(status)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+                Spacer()
+
+                Text("Step \(trainer.currentScreen) of 4")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                if trainer.currentScreen < 4 {
+                    Button(action: { trainer.currentScreen += 1 }) {
+                        HStack(spacing: 4) {
+                            Text("Next")
+                            Image(systemName: "chevron.right")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+    }
+}
+
+// MARK: - 4-Screen Grid (Debug Mode)
+
+struct FourScreenGrid: View {
+    @ObservedObject var trainer: TrainerViewModel
+
+    var body: some View {
+        VStack(spacing: 1) {
+            HStack(spacing: 1) {
+                ScreenPanel(title: "1 · Dataset Setup", color: .blue) {
+                    Screen1_DatasetSetupView(trainer: trainer)
+                }
+                ScreenPanel(title: "2 · Model & Training", color: .purple) {
+                    Screen2_ModelTrainingView(trainer: trainer)
+                }
+            }
+            HStack(spacing: 1) {
+                ScreenPanel(title: "3 · Device Connection", color: .orange) {
+                    Screen3_DeviceConnectionView(trainer: trainer)
+                }
+                ScreenPanel(title: "4 · Results & Logs", color: .green) {
+                    Screen4_ResultsView(trainer: trainer)
+                }
+            }
+        }
+        .background(Color.gray.opacity(0.3))
+    }
+}
+
+struct ScreenPanel<Content: View>: View {
+    let title: String
+    let color: Color
+    let content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Circle()
+                    .fill(color)
+                    .frame(width: 8, height: 8)
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color(NSColor.windowBackgroundColor))
+
+            Divider()
+
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+}
+
+// MARK: - Screen 1: Dataset & Environment Setup
+
+struct Screen1_DatasetSetupView: View {
+    @ObservedObject var trainer: TrainerViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Header
+                ScreenTitle(icon: "folder.badge.gearshape", title: "Dataset & Environment Setup",
+                            subtitle: "Select your dataset and configure Python environment")
+
+                // Dataset
+                SectionHeader("Dataset")
+                DatasetPicker(trainer: trainer)
+
+                Divider().padding(.vertical, 4)
+
+                // Python path
+                SectionHeader("Python")
+                PythonPathField(trainer: trainer)
+
+                Divider().padding(.vertical, 4)
+
+                // TEMP: Python version check
+                SectionHeader("Python Version Check")
+                TempBadge()
+                PythonVersionCheck(trainer: trainer)
             }
             .padding(20)
         }
     }
 }
 
-// MARK: - Log Panel
+// MARK: - Screen 2: Model & Training Configuration
 
-struct LogPanel: View {
+struct Screen2_ModelTrainingView: View {
     @ObservedObject var trainer: TrainerViewModel
-    @State private var autoScroll = true
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Toolbar
-            HStack {
-                Text("Training Log")
-                    .font(.headline)
-                Spacer()
-                Toggle("Auto-scroll", isOn: $autoScroll)
-                    .toggleStyle(.checkbox)
-                    .font(.caption)
-                Button(action: { trainer.log = "" }) {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
-                .foregroundColor(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Header
+                ScreenTitle(icon: "brain", title: "Model & Training",
+                            subtitle: "Choose model architecture and set training hyperparameters")
+
+                // TEMP: Model selector
+                SectionHeader("Model Architecture")
+                TempBadge()
+                ModelSelectorPlaceholder(trainer: trainer)
+
+                Divider().padding(.vertical, 4)
+
+                // Training config (existing)
+                SectionHeader("Training Hyperparameters")
+                StepperField(label: "Rounds", value: $trainer.rounds, range: 1...200)
+                StepperField(label: "Local epochs per round", value: $trainer.localEpochs, range: 1...50)
+                StepperField(label: "Batch size", value: $trainer.batchSize, range: 1...128)
+
+                Divider().padding(.vertical, 4)
+
+                SectionHeader("Advanced")
+                LRField(lr: $trainer.lr)
+                StepperField(label: "Round timeout (s)", value: $trainer.timeout, range: 30...600)
+
+                Divider().padding(.vertical, 4)
+
+                // TEMP: Device specs
+                SectionHeader("This Device")
+                TempBadge()
+                DeviceInfoPlaceholder()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-
-            Divider()
-
-            // Log output
-            ScrollViewReader { proxy in
-                ScrollView {
-                    Text(trainer.log.isEmpty ? "Training output will appear here..." : trainer.log)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(trainer.log.isEmpty ? .secondary : .primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .id("bottom")
-                }
-                .background(Color(NSColor.textBackgroundColor))
-                .onChange(of: trainer.log) { _ in
-                    if autoScroll {
-                        withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
-                    }
-                }
-            }
-
-            // Status bar
-            if trainer.isRunning {
-                Divider()
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 16, height: 16)
-                    Text("Training in progress...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    if let ip = trainer.masterIP {
-                        Text("Master: \(ip):8000")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-
-                if trainer.workerCount > 0 {
-                    Divider()
-                    HStack {
-                        Text("Workers connected: \(trainer.workerCount)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Button("▶ Begin Training") {
-                            trainer.sendEnter()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.green)
-                        .padding(.trailing, 12)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                }
-            }
+            .padding(20)
         }
     }
 }
 
-// MARK: - Subviews
+// MARK: - Screen 3: Device Connection & Visualization
+
+struct Screen3_DeviceConnectionView: View {
+    @ObservedObject var trainer: TrainerViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Header
+                ScreenTitle(icon: "network", title: "Device Connection",
+                            subtitle: "Connect workers and manage distributed training")
+
+                // Connection status
+                SectionHeader("Master Node")
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "server.rack")
+                            .foregroundColor(.accentColor)
+                        Text("Master IP:")
+                            .font(.callout)
+                        Text(trainer.masterIP ?? "Not running")
+                            .font(.system(.callout, design: .monospaced))
+                            .foregroundColor(trainer.masterIP != nil ? .primary : .secondary)
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+
+                    HStack {
+                        Image(systemName: "desktopcomputer")
+                            .foregroundColor(.orange)
+                        Text("Workers connected:")
+                            .font(.callout)
+                        Text("\(trainer.workerCount)")
+                            .font(.system(.callout, design: .monospaced))
+                            .fontWeight(.bold)
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+                }
+
+                Divider().padding(.vertical, 4)
+
+                // Start / Stop / Begin
+                SectionHeader("Training Control")
+                VStack(spacing: 10) {
+                    Button(action: trainer.isRunning ? trainer.stop : trainer.start) {
+                        HStack {
+                            Image(systemName: trainer.isRunning ? "stop.fill" : "play.fill")
+                            Text(trainer.isRunning ? "Stop Training" : "Start Training")
+                                .fontWeight(.medium)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(trainer.isRunning ? .red : .accentColor)
+                    .disabled(trainer.datasetPath.isEmpty && !trainer.isRunning)
+
+                    if trainer.isRunning && trainer.workerCount > 0 {
+                        Button(action: { trainer.sendEnter() }) {
+                            HStack {
+                                Image(systemName: "play.circle.fill")
+                                Text("Begin Training (all workers connected)")
+                                    .fontWeight(.medium)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                    }
+
+                    if let status = trainer.statusMessage {
+                        Text(status)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+
+                Divider().padding(.vertical, 4)
+
+                // TEMP: Network topology visualization
+                SectionHeader("Network Topology")
+                TempBadge()
+                TopologyPlaceholder(trainer: trainer)
+
+                Divider().padding(.vertical, 4)
+
+                // TEMP: Per-worker specs
+                SectionHeader("Worker Details")
+                TempBadge()
+                WorkerCardsPlaceholder(workerCount: trainer.workerCount)
+            }
+            .padding(20)
+        }
+    }
+}
+
+// MARK: - Screen 4: Results & Logs
+
+struct Screen4_ResultsView: View {
+    @ObservedObject var trainer: TrainerViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // TEMP: DB Results panel (top half)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    ScreenTitle(icon: "chart.bar.xaxis", title: "Results", subtitle: "Training results and logs")
+                    Spacer()
+                    // TEMP: LAN/WiFi toggle
+                    TempBadgeInline()
+                    Picker("Connection", selection: $trainer.connectionType) {
+                        Text("LAN").tag("LAN")
+                        Text("WiFi").tag("WiFi")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 120)
+                }
+
+                // TEMP: DB display panel
+                TempBadge()
+                DBResultsPlaceholder(trainer: trainer)
+            }
+            .padding(16)
+
+            Divider()
+
+            // Existing log panel (bottom half)
+            LogPanel(trainer: trainer)
+        }
+    }
+}
+
+// MARK: - Existing Subviews (kept as-is)
+
+struct ScreenTitle: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.bottom, 8)
+    }
+}
 
 struct SectionHeader: View {
     let title: String
@@ -340,9 +629,379 @@ struct PythonPathField: View {
     }
 }
 
+// MARK: - Log Panel
+
+struct LogPanel: View {
+    @ObservedObject var trainer: TrainerViewModel
+    @State private var autoScroll = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Toolbar
+            HStack {
+                Text("Training Log")
+                    .font(.headline)
+                Spacer()
+                Toggle("Auto-scroll", isOn: $autoScroll)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+                Button(action: { trainer.log = "" }) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            // Log output
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(trainer.log.isEmpty ? "Training output will appear here..." : trainer.log)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(trainer.log.isEmpty ? .secondary : .primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .id("bottom")
+                }
+                .background(Color(NSColor.textBackgroundColor))
+                .onChange(of: trainer.log) { _ in
+                    if autoScroll {
+                        withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+                }
+            }
+
+            // Status bar
+            if trainer.isRunning {
+                Divider()
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(width: 16, height: 16)
+                    Text("Training in progress...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    if let ip = trainer.masterIP {
+                        Text("Master: \(ip):8000")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - TEMP Placeholder Components
+
+struct TempBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "hammer.fill")
+                .font(.system(size: 9))
+            Text("TEMP — Placeholder for future implementation")
+                .font(.system(size: 10, weight: .medium))
+        }
+        .foregroundColor(.orange)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.orange.opacity(0.1))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.orange.opacity(0.3), lineWidth: 1))
+        )
+    }
+}
+
+struct TempBadgeInline: View {
+    var body: some View {
+        Text("TEMP")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundColor(.orange)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 3).fill(Color.orange.opacity(0.15)))
+    }
+}
+
+// TEMP: Python version check
+struct PythonVersionCheck: View {
+    @ObservedObject var trainer: TrainerViewModel
+
+    var body: some View {
+        HStack {
+            Image(systemName: trainer.pythonVersion != nil ? "checkmark.circle.fill" : "questionmark.circle")
+                .foregroundColor(trainer.pythonVersion != nil ? .green : .secondary)
+            Text(trainer.pythonVersion ?? "Click 'Check' to verify Python version")
+                .font(.system(.callout, design: .monospaced))
+                .foregroundColor(trainer.pythonVersion != nil ? .primary : .secondary)
+            Spacer()
+            Button("Check") {
+                trainer.checkPythonVersion()
+            }
+            .buttonStyle(.bordered)
+            .disabled(trainer.pythonPath.isEmpty)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+    }
+}
+
+// TEMP: Model selector
+struct ModelSelectorPlaceholder: View {
+    @ObservedObject var trainer: TrainerViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Architecture", selection: $trainer.selectedModel) {
+                Text("ResNet18").tag("resnet18")
+                Text("ResNet34 (coming soon)").tag("resnet34")
+                Text("VGG16 (coming soon)").tag("vgg16")
+                Text("MobileNetV2 (coming soon)").tag("mobilenetv2")
+            }
+            .pickerStyle(.radioGroup)
+
+            if trainer.selectedModel != "resnet18" {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.yellow)
+                    Text("Only ResNet18 is currently supported. Other models will be enabled in future updates.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.yellow.opacity(0.1)))
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+    }
+}
+
+// TEMP: Device info
+struct DeviceInfoPlaceholder: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            InfoRow(icon: "cpu", label: "CPU", value: ProcessInfo.processInfo.processorCount.description + " cores")
+            InfoRow(icon: "memorychip", label: "RAM", value: ByteCountFormatter.string(fromByteCount: Int64(ProcessInfo.processInfo.physicalMemory), countStyle: .memory))
+            InfoRow(icon: "gpu", label: "GPU", value: "Apple Silicon (MPS)" )
+            InfoRow(icon: "desktopcomputer", label: "OS", value: ProcessInfo.processInfo.operatingSystemVersionString)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+    }
+}
+
+struct InfoRow: View {
+    let icon: String
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .foregroundColor(.accentColor)
+                .frame(width: 20)
+            Text(label)
+                .font(.callout)
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(value)
+                .font(.system(.callout, design: .monospaced))
+        }
+    }
+}
+
+// TEMP: Topology visualization
+struct TopologyPlaceholder: View {
+    @ObservedObject var trainer: TrainerViewModel
+
+    var body: some View {
+        VStack(spacing: 16) {
+            // Master node
+            NodeBubble(label: "Master", subtitle: trainer.masterIP ?? "—", color: .blue, icon: "server.rack")
+
+            if trainer.workerCount > 0 {
+                // Connection lines
+                HStack(spacing: 0) {
+                    ForEach(0..<trainer.workerCount, id: \.self) { _ in
+                        VStack(spacing: 0) {
+                            Rectangle()
+                                .fill(Color.green)
+                                .frame(width: 2, height: 30)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+
+                // Worker nodes
+                HStack(spacing: 12) {
+                    ForEach(0..<trainer.workerCount, id: \.self) { i in
+                        NodeBubble(label: "Worker \(i + 1)", subtitle: "Connected", color: .orange, icon: "desktopcomputer")
+                    }
+                }
+            } else {
+                Text("No workers connected yet")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 20)
+            }
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(NSColor.controlBackgroundColor)))
+    }
+}
+
+struct NodeBubble: View {
+    let label: String
+    let subtitle: String
+    let color: Color
+    let icon: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundColor(color)
+            Text(label)
+                .font(.caption)
+                .fontWeight(.semibold)
+            Text(subtitle)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.secondary)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(color.opacity(0.1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(color.opacity(0.3), lineWidth: 1))
+        )
+    }
+}
+
+// TEMP: Worker detail cards
+struct WorkerCardsPlaceholder: View {
+    let workerCount: Int
+
+    var body: some View {
+        if workerCount == 0 {
+            Text("Worker details will appear when workers connect.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+        } else {
+            VStack(spacing: 8) {
+                ForEach(0..<workerCount, id: \.self) { i in
+                    HStack {
+                        Image(systemName: "desktopcomputer")
+                            .foregroundColor(.orange)
+                        Text("Worker \(i + 1)")
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("CPU: — | RAM: — | GPU: —")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+                }
+            }
+        }
+    }
+}
+
+// TEMP: DB results display
+struct DBResultsPlaceholder: View {
+    @ObservedObject var trainer: TrainerViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Table header
+            HStack {
+                Text("Device").frame(width: 80, alignment: .leading)
+                Text("Time").frame(width: 60, alignment: .leading)
+                Text("Status").frame(width: 60, alignment: .center)
+                Text("Model").frame(width: 80, alignment: .leading)
+                Text("Dataset").frame(width: 60, alignment: .trailing)
+                Text("Connection").frame(width: 80, alignment: .trailing)
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color(NSColor.controlBackgroundColor))
+
+            Divider()
+
+            // Placeholder rows
+            if trainer.isRunning || !trainer.log.isEmpty {
+                DBPlaceholderRow(device: "Master", time: "—", status: trainer.isRunning ? "Running" : "Done",
+                                 model: "ResNet18", dataset: "—", connection: trainer.connectionType)
+                Divider()
+                ForEach(0..<max(trainer.workerCount, 1), id: \.self) { i in
+                    DBPlaceholderRow(device: "Worker \(i+1)", time: "—", status: "—",
+                                     model: "ResNet18", dataset: "—", connection: trainer.connectionType)
+                    if i < max(trainer.workerCount, 1) - 1 { Divider() }
+                }
+            } else {
+                Text("No training data yet. Start a training session to see results.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+    }
+}
+
+struct DBPlaceholderRow: View {
+    let device: String
+    let time: String
+    let status: String
+    let model: String
+    let dataset: String
+    let connection: String
+
+    var body: some View {
+        HStack {
+            Text(device).frame(width: 80, alignment: .leading)
+            Text(time).frame(width: 60, alignment: .leading)
+            Text(status)
+                .foregroundColor(status == "Running" ? .green : (status == "Done" ? .blue : .secondary))
+                .frame(width: 60, alignment: .center)
+            Text(model).frame(width: 80, alignment: .leading)
+            Text(dataset).frame(width: 60, alignment: .trailing)
+            Text(connection).frame(width: 80, alignment: .trailing)
+        }
+        .font(.system(size: 10, design: .monospaced))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+}
+
+// MARK: - View Mode Enum
+
+enum ViewMode: String, CaseIterable {
+    case sequential
+    case fourScreen
+}
+
 // MARK: - ViewModel
 
 class TrainerViewModel: ObservableObject {
+    @Published var currentScreen: Int   = 1
+    @Published var viewMode: ViewMode   = .sequential
+
     @Published var datasetPath: String   = ""
     @Published var rounds: Int           = 15
     @Published var localEpochs: Int      = 2
@@ -357,6 +1016,11 @@ class TrainerViewModel: ObservableObject {
     @Published var masterIP: String?     = nil
     @Published var waitingForWorkers: Bool = false
     @Published var workerCount: Int        = 0
+
+    // New state for TEMP components
+    @Published var pythonVersion: String?  = nil
+    @Published var selectedModel: String   = "resnet18"
+    @Published var connectionType: String  = "LAN"
 
     private var process: Process?
     private var masterFileHandle: FileHandle?
@@ -396,6 +1060,31 @@ class TrainerViewModel: ObservableObject {
             .map { $0.lastPathComponent }
             .filter { !$0.hasPrefix(".") }
             .sorted()
+    }
+
+    // TEMP: Check python version
+    func checkPythonVersion() {
+        guard !pythonPath.isEmpty else { return }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: pythonPath)
+        proc.arguments = ["--version"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = pipe
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                DispatchQueue.main.async {
+                    self.pythonVersion = output
+                }
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.pythonVersion = "Error: \(error.localizedDescription)"
+            }
+        }
     }
 
     func start() {
