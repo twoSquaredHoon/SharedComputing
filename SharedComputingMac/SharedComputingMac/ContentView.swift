@@ -15,19 +15,19 @@ import AppKit
 // MARK: - Design Tokens
 
 private enum DS {
-    // Accent palette (max 3 + neutrals per skill checklist)
-    static let cyan   = Color(red: 0.0, green: 0.83, blue: 1.0)
-    static let purple = Color(red: 0.66, green: 0.33, blue: 0.97)
-    static let amber  = Color(red: 0.96, green: 0.62, blue: 0.04)
+    // Ant Design Core (Dark Theme)
+    static let cyan   = Color(red: 0.086, green: 0.467, blue: 1.0)
+    static let purple = Color(red: 0.447, green: 0.180, blue: 0.820)
+    static let amber  = Color(red: 0.980, green: 0.678, blue: 0.078)
 
     // Semantic
-    static let success = Color(red: 0.2, green: 0.83, blue: 0.6)
-    static let danger  = Color(red: 0.95, green: 0.3, blue: 0.3)
+    static let success = Color(red: 0.322, green: 0.769, blue: 0.102)
+    static let danger  = Color(red: 1.0, green: 0.302, blue: 0.310)
 
-    // Background gradient stops
-    static let bg1 = Color(red: 0.06, green: 0.06, blue: 0.14)
-    static let bg2 = Color(red: 0.08, green: 0.12, blue: 0.22)
-    static let bg3 = Color(red: 0.06, green: 0.08, blue: 0.18)
+    // Backgrounds (Ant Design Dark)
+    static let bg1 = Color(red: 0.08, green: 0.08, blue: 0.08) // #141414
+    static let bg2 = Color(red: 0.08, green: 0.08, blue: 0.08)
+    static let bg3 = Color(red: 0.08, green: 0.08, blue: 0.08)
 
     // Spacing scale
     static let sp4:  CGFloat = 4
@@ -37,11 +37,11 @@ private enum DS {
     static let sp24: CGFloat = 24
     static let sp32: CGFloat = 32
 
-    // Corner radii
-    static let r8:  CGFloat = 8
-    static let r12: CGFloat = 12
-    static let r16: CGFloat = 16
-    static let r20: CGFloat = 20
+    // Corner radii (Ant Design Default)
+    static let r8:  CGFloat = 6
+    static let r12: CGFloat = 8
+    static let r16: CGFloat = 8
+    static let r20: CGFloat = 8
 }
 
 // MARK: - Main App
@@ -77,19 +77,19 @@ struct WindowAccessor: NSViewRepresentable {
 // MARK: - Reusable Style Components
 
 struct GlassCard: ViewModifier {
-    var radius: CGFloat = DS.r16
+    var radius: CGFloat = DS.r12
     var inset: CGFloat = DS.sp16
 
     func body(content: Content) -> some View {
         content
             .padding(inset)
-            .background(.ultraThinMaterial)
+            .background(Color(red: 0.12, green: 0.12, blue: 0.12)) // #1f1f1f Container
+            .compositingGroup()
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(Color(red: 0.26, green: 0.26, blue: 0.26), lineWidth: 1) // #424242 Border
             )
-            .shadow(color: Color.black.opacity(0.2), radius: 16, x: 0, y: 8)
     }
 }
 
@@ -105,13 +105,13 @@ struct GlassTextField: TextFieldStyle {
         configuration
             .padding(.horizontal, DS.sp12)
             .padding(.vertical, DS.sp8)
-            .background(Color.white.opacity(0.06))
+            .background(Color(red: 0.08, green: 0.08, blue: 0.08)) // #141414
             .clipShape(RoundedRectangle(cornerRadius: DS.r8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: DS.r8, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(Color(red: 0.26, green: 0.26, blue: 0.26), lineWidth: 1) // #424242 border
             )
-            .font(.system(size: 13, design: .monospaced))
+            .font(.system(size: 13))
     }
 }
 
@@ -120,17 +120,13 @@ struct PrimaryButton: ButtonStyle {
     var color: Color = DS.cyan
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundColor(.white)
+            .font(.system(size: 13))
+            .foregroundStyle(.white)
             .padding(.vertical, DS.sp8)
             .padding(.horizontal, DS.sp16)
             .background(
                 RoundedRectangle(cornerRadius: DS.r8, style: .continuous)
-                    .fill(color.opacity(configuration.isPressed ? 0.6 : 0.85))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.r8, style: .continuous)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    .fill(color.opacity(configuration.isPressed ? 0.8 : 1.0))
             )
             .contentShape(Rectangle())
     }
@@ -139,17 +135,17 @@ struct PrimaryButton: ButtonStyle {
 struct SecondaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
-            .foregroundColor(.white.opacity(configuration.isPressed ? 0.6 : 0.9))
+            .font(.system(size: 13))
+            .foregroundStyle(.white.opacity(configuration.isPressed ? 0.6 : 0.88))
             .padding(.vertical, DS.sp8)
             .padding(.horizontal, DS.sp16)
             .background(
                 RoundedRectangle(cornerRadius: DS.r8, style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.04 : 0.08))
+                    .fill(Color.clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: DS.r8, style: .continuous)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    .stroke(Color(red: 0.26, green: 0.26, blue: 0.26), lineWidth: 1) // #424242
             )
             .contentShape(Rectangle())
     }
@@ -160,17 +156,13 @@ struct WideButton: ButtonStyle {
     var color: Color = DS.cyan
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundColor(.white)
+            .font(.system(size: 15))
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, DS.sp12)
             .background(
                 RoundedRectangle(cornerRadius: DS.r12, style: .continuous)
-                    .fill(color.opacity(configuration.isPressed ? 0.6 : 0.85))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.r12, style: .continuous)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    .fill(color.opacity(configuration.isPressed ? 0.8 : 1.0))
             )
             .contentShape(Rectangle())
     }
@@ -179,12 +171,11 @@ struct WideButton: ButtonStyle {
 // MARK: - Root
 
 struct ContentView: View {
-    @StateObject private var trainer = TrainerViewModel()
+    @State private var trainer = TrainerViewModel()
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.bg1, DS.bg2, DS.bg3],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            DS.bg1
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -204,7 +195,7 @@ struct ContentView: View {
 // MARK: - Top Bar
 
 struct TopBar: View {
-    @ObservedObject var trainer: TrainerViewModel
+    @Bindable var trainer: TrainerViewModel
 
     var body: some View {
         HStack(spacing: DS.sp12) {
@@ -212,13 +203,13 @@ struct TopBar: View {
             HStack(spacing: DS.sp8) {
                 Image(systemName: "cpu.fill")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(DS.cyan)
+                    .foregroundStyle(DS.cyan)
                     .frame(width: 28, height: 28)
                     .background(DS.cyan.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 Text("SharedComputing")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
             }
             .padding(.leading, 72) // traffic-light offset
 
@@ -245,9 +236,7 @@ struct TopBar: View {
                 .fixedSize()
                 .padding(.vertical, DS.sp4)
                 .padding(.horizontal, DS.sp8)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.06), lineWidth: 1))
+                .background(Color.clear)
             }
 
             Spacer()
@@ -261,7 +250,8 @@ struct TopBar: View {
             .padding(.trailing, DS.sp16)
         }
         .padding(.vertical, DS.sp12)
-        .background(.ultraThinMaterial)
+        .background(Color(red: 0.08, green: 0.08, blue: 0.08)) // #141414 Ant dark header
+        .overlay(Rectangle().frame(height: 1).foregroundStyle(Color(red: 0.26, green: 0.26, blue: 0.26)), alignment: .bottom) // #424242 Border
     }
 
     private var stepData: [String] { ["Setup", "Model", "Connect", "Results"] }
@@ -282,16 +272,16 @@ struct StepPill: View {
                 if isDone {
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                 } else {
                     Text("\(number)")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(isActive ? .black : .white.opacity(0.5))
+                        .foregroundStyle(isActive ? .black : .white.opacity(0.5))
                 }
             }
             Text(label)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(isActive ? .white : (isDone ? .white.opacity(0.7) : .white.opacity(0.4)))
+                .foregroundStyle(isActive ? .white : (isDone ? .white.opacity(0.7) : .white.opacity(0.4)))
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
         }
@@ -303,7 +293,7 @@ struct StepPill: View {
 // MARK: - Sequential Wizard
 
 struct SequentialWizard: View {
-    @ObservedObject var trainer: TrainerViewModel
+    @Bindable var trainer: TrainerViewModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -329,7 +319,7 @@ struct SequentialWizard: View {
                 Spacer()
                 Text("Step \(trainer.currentScreen) of 4")
                     .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.35))
+                    .foregroundStyle(.white.opacity(0.35))
                 Spacer()
                 if trainer.currentScreen < 4 {
                     Button { trainer.currentScreen += 1 } label: {
@@ -341,7 +331,8 @@ struct SequentialWizard: View {
             }
             .padding(.horizontal, DS.sp24)
             .padding(.vertical, DS.sp12)
-            .background(.ultraThinMaterial)
+            .background(Color(red: 0.08, green: 0.08, blue: 0.08))
+            .overlay(Rectangle().frame(height: 1).foregroundStyle(Color(red: 0.26, green: 0.26, blue: 0.26)), alignment: .top)
         }
     }
 }
@@ -349,7 +340,7 @@ struct SequentialWizard: View {
 // MARK: - 4-Screen Grid
 
 struct FourScreenGrid: View {
-    @ObservedObject var trainer: TrainerViewModel
+    @Bindable var trainer: TrainerViewModel
 
     var body: some View {
         GeometryReader { geo in
@@ -376,7 +367,7 @@ struct FourScreenGrid: View {
 struct GridPanel<C: View>: View {
     let title: String
     let dot: Color
-    @ViewBuilder let content: () -> C
+    @ViewBuilder let content: C
 
     var body: some View {
         VStack(spacing: 0) {
@@ -384,21 +375,22 @@ struct GridPanel<C: View>: View {
                 Circle().fill(dot).frame(width: 6, height: 6)
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.6))
                 Spacer()
             }
             .padding(.horizontal, DS.sp12)
             .padding(.vertical, DS.sp8)
             .background(Color.black.opacity(0.15))
 
-            content()
+            content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(.ultraThinMaterial)
+        .background(Color(red: 0.12, green: 0.12, blue: 0.12)) // Container depth
+        .compositingGroup()
         .clipShape(RoundedRectangle(cornerRadius: DS.r12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.r12, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                .stroke(Color(red: 0.26, green: 0.26, blue: 0.26), lineWidth: 1)
         )
     }
 }
@@ -415,17 +407,17 @@ struct PageHeader: View {
         HStack(spacing: DS.sp12) {
             Image(systemName: icon)
                 .font(.system(size: 18, weight: .medium))
-                .foregroundColor(tint)
+                .foregroundStyle(tint)
                 .frame(width: 40, height: 40)
                 .background(tint.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: DS.r8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                 Text(sub)
                     .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundStyle(.white.opacity(0.5))
             }
         }
     }
@@ -437,7 +429,7 @@ struct Label_: View {
     var body: some View {
         Text(text.uppercased())
             .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(.white.opacity(0.4))
+            .foregroundStyle(.white.opacity(0.4))
             .tracking(1)
             .padding(.bottom, DS.sp8)
     }
@@ -448,7 +440,7 @@ struct TempTag: View {
         Text("TEMP")
             .font(.system(size: 9, weight: .bold))
             .tracking(0.8)
-            .foregroundColor(DS.amber)
+            .foregroundStyle(DS.amber)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(DS.amber.opacity(0.15))
@@ -457,10 +449,62 @@ struct TempTag: View {
     }
 }
 
+struct PreviewTag: View {
+    var body: some View {
+        Text("PREVIEW")
+            .font(.system(size: 9, weight: .bold))
+            .tracking(0.8)
+            .foregroundStyle(DS.amber)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(DS.amber.opacity(0.15))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(DS.amber.opacity(0.3), lineWidth: 1))
+    }
+}
+
+struct TelemetryRow: View {
+    let icon: String
+    let label: String
+    let value: String
+    let progress: Double
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: DS.sp12) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(tint.opacity(0.6))
+                .frame(width: 20, alignment: .center)
+            Text(label)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 40, alignment: .leading)
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(tint.opacity(0.5))
+                        .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
+                }
+            }
+            .frame(height: 6)
+
+            Text(value)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.4))
+                .frame(width: 50, alignment: .trailing)
+        }
+        .padding(.vertical, DS.sp4)
+    }
+}
+
 // MARK: ─── Screen 1 : Dataset & Environment ─────────────────────────
 
 struct Screen1: View {
-    @ObservedObject var trainer: TrainerViewModel
+    @Bindable var trainer: TrainerViewModel
 
     var body: some View {
         ScrollView {
@@ -486,13 +530,14 @@ struct Screen1: View {
                             }
                         }
                         .buttonStyle(SecondaryButton())
+                        .accessibilityLabel("Browse for dataset folder")
                     }
                     if !trainer.detectedClasses.isEmpty {
                         HStack(spacing: DS.sp4) {
-                            Image(systemName: "tag.fill").font(.system(size: 10)).foregroundColor(DS.success)
+                            Image(systemName: "tag.fill").font(.system(size: 10)).foregroundStyle(DS.success)
                             Text("\(trainer.detectedClasses.count) classes: \(trainer.detectedClasses.joined(separator: ", "))")
                                 .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundStyle(.white.opacity(0.6))
                         }
                     }
                 }
@@ -503,7 +548,7 @@ struct Screen1: View {
                     Label_("Python Environment")
 
                     VStack(alignment: .leading, spacing: DS.sp4) {
-                        Text("Executable").font(.system(size: 11)).foregroundColor(.white.opacity(0.45))
+                        Text("Executable").font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
                         HStack(spacing: DS.sp8) {
                             TextField("/usr/local/bin/python3", text: $trainer.pythonPath)
                                 .textFieldStyle(GlassTextField())
@@ -517,11 +562,12 @@ struct Screen1: View {
                                     ?? NSHomeDirectory() + "/venv_shared/bin/python3"
                             }
                             .buttonStyle(SecondaryButton())
+                            .accessibilityLabel("Auto-detect Python path")
                         }
                     }
 
                     VStack(alignment: .leading, spacing: DS.sp4) {
-                        Text("master.py").font(.system(size: 11)).foregroundColor(.white.opacity(0.45))
+                        Text("master.py").font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
                         HStack(spacing: DS.sp8) {
                             TextField("/path/to/master.py", text: $trainer.masterScriptPath)
                                 .textFieldStyle(GlassTextField())
@@ -535,11 +581,12 @@ struct Screen1: View {
                                 }
                             }
                             .buttonStyle(SecondaryButton())
+                            .accessibilityLabel("Find master.py script")
                         }
                         if !trainer.masterScriptPath.isEmpty {
                             Text(trainer.masterScriptPath)
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(DS.cyan.opacity(0.7))
+                                .foregroundStyle(DS.cyan.opacity(0.7))
                                 .lineLimit(1).truncationMode(.middle)
                         }
                     }
@@ -552,13 +599,14 @@ struct Screen1: View {
                     HStack(spacing: DS.sp12) {
                         Image(systemName: trainer.pythonVersion != nil ? "checkmark.circle.fill" : "questionmark.circle")
                             .font(.system(size: 16))
-                            .foregroundColor(trainer.pythonVersion != nil ? DS.success : .white.opacity(0.3))
+                            .foregroundStyle(trainer.pythonVersion != nil ? DS.success : .white.opacity(0.3))
                         Text(trainer.pythonVersion ?? "Not checked yet")
                             .font(.system(size: 13, design: .monospaced))
-                            .foregroundColor(trainer.pythonVersion != nil ? .white : .white.opacity(0.45))
+                            .foregroundStyle(trainer.pythonVersion != nil ? .white : .white.opacity(0.45))
                         Spacer()
                         Button("Check") { trainer.checkPythonVersion() }
                             .buttonStyle(SecondaryButton())
+                            .accessibilityLabel("Check Python version")
                             .disabled(trainer.pythonPath.isEmpty)
                     }
                 }
@@ -572,7 +620,7 @@ struct Screen1: View {
 // MARK: ─── Screen 2 : Model & Training ──────────────────────────────
 
 struct Screen2: View {
-    @ObservedObject var trainer: TrainerViewModel
+    @Bindable var trainer: TrainerViewModel
 
     var body: some View {
         ScrollView {
@@ -595,10 +643,10 @@ struct Screen2: View {
 
                     if trainer.selectedModel != "resnet18" {
                         HStack(spacing: DS.sp8) {
-                            Image(systemName: "info.circle.fill").foregroundColor(DS.amber)
+                            Image(systemName: "info.circle.fill").foregroundStyle(DS.amber)
                             Text("Only ResNet18 is currently supported.")
                                 .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.7))
+                                .foregroundStyle(.white.opacity(0.7))
                         }
                         .padding(DS.sp8)
                         .background(DS.amber.opacity(0.1))
@@ -615,7 +663,7 @@ struct Screen2: View {
                     ParamRow("Batch Size", value: $trainer.batchSize, range: 1...128)
 
                     HStack {
-                        Text("Learning Rate").font(.system(size: 13)).foregroundColor(.white.opacity(0.8))
+                        Text("Learning Rate").font(.system(size: 13)).foregroundStyle(.white.opacity(0.8))
                         Spacer()
                         TextField("", value: $trainer.lr, format: .number)
                             .textFieldStyle(GlassTextField())
@@ -653,7 +701,7 @@ struct ParamRow: View {
 
     var body: some View {
         HStack {
-            Text(label).font(.system(size: 13)).foregroundColor(.white.opacity(0.8))
+            Text(label).font(.system(size: 13)).foregroundStyle(.white.opacity(0.8))
             Spacer()
             Stepper(value: $value, in: range) {
                 Text("\(value)")
@@ -668,14 +716,14 @@ struct SpecRow: View {
     let icon: String; let label: String; let val: String; let tint: Color
     var body: some View {
         HStack(spacing: DS.sp12) {
-            Image(systemName: icon).font(.system(size: 12)).foregroundColor(tint)
+            Image(systemName: icon).font(.system(size: 12)).foregroundStyle(tint)
                 .frame(width: 24, height: 24)
                 .background(tint.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-            Text(label).font(.system(size: 13)).foregroundColor(.white.opacity(0.6))
+            Text(label).font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
             Spacer()
             Text(val).font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundStyle(.white.opacity(0.9))
         }
     }
 }
@@ -683,7 +731,7 @@ struct SpecRow: View {
 // MARK: ─── Screen 3 : Device Connection ──────────────────────────────
 
 struct Screen3: View {
-    @ObservedObject var trainer: TrainerViewModel
+    @Bindable var trainer: TrainerViewModel
 
     var body: some View {
         ScrollView {
@@ -729,7 +777,7 @@ struct Screen3: View {
                     if let s = trainer.statusMessage {
                         Text(s)
                             .font(.system(size: 12))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundStyle(.white.opacity(0.6))
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.top, DS.sp4)
                     }
@@ -745,21 +793,30 @@ struct Screen3: View {
 
                 // Workers
                 VStack(alignment: .leading, spacing: DS.sp8) {
-                    HStack { Label_("Worker Telemetry"); Spacer(); TempTag() }
+                    HStack { Label_("Worker Telemetry"); Spacer(); PreviewTag() }
+
+                    // Placeholder metric bars
+                    TelemetryRow(icon: "cpu.fill", label: "CPU", value: "— %", progress: 0, tint: DS.cyan)
+                    TelemetryRow(icon: "memorychip.fill", label: "RAM", value: "— GB", progress: 0, tint: DS.purple)
+                    TelemetryRow(icon: "bolt.fill", label: "GPU", value: "— %", progress: 0, tint: DS.amber)
+                    TelemetryRow(icon: "thermometer.medium", label: "Temp", value: "— °C", progress: 0, tint: DS.danger)
+
                     if trainer.workerCount == 0 {
-                        Text("No workers connected yet.")
-                            .font(.system(size: 12)).foregroundColor(.white.opacity(0.35))
+                        Text("No workers connected — metrics unavailable")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.3))
+                            .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.vertical, DS.sp8)
                     } else {
                         ForEach(0..<trainer.workerCount, id: \.self) { i in
                             HStack(spacing: DS.sp12) {
                                 Image(systemName: "desktopcomputer")
-                                    .foregroundColor(DS.amber)
+                                    .foregroundStyle(DS.amber)
                                 Text("Worker \(i + 1)").font(.system(size: 13, weight: .medium))
                                 Spacer()
                                 Text("CPU: — | RAM: — | GPU: —")
                                     .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.35))
+                                    .foregroundStyle(.white.opacity(0.35))
                             }
                             .padding(DS.sp12)
                             .background(Color.white.opacity(0.04))
@@ -780,15 +837,15 @@ struct StatusCard: View {
         HStack(spacing: DS.sp12) {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .light))
-                .foregroundColor(tint)
+                .foregroundStyle(tint)
                 .frame(width: 40, height: 40)
                 .background(tint.opacity(0.1))
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 11, weight: .medium)).foregroundColor(.white.opacity(0.5))
+                Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.5))
                 Text(value)
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundColor(live ? DS.success : .white.opacity(0.4))
+                    .foregroundStyle(live ? DS.success : .white.opacity(0.4))
             }
             Spacer()
             Circle()
@@ -800,7 +857,7 @@ struct StatusCard: View {
 }
 
 struct TopoView: View {
-    @ObservedObject var trainer: TrainerViewModel
+    let trainer: TrainerViewModel
     var body: some View {
         VStack(spacing: DS.sp16) {
             NodeDot(label: "Master", sub: trainer.masterIP ?? "Offline", color: DS.cyan, icon: "server.rack")
@@ -821,7 +878,7 @@ struct TopoView: View {
                 }
             } else {
                 Text("Waiting for connections…")
-                    .font(.system(size: 12)).foregroundColor(.white.opacity(0.3))
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.3))
                     .padding(.vertical, DS.sp16)
             }
         }
@@ -838,13 +895,13 @@ struct NodeDot: View {
         VStack(spacing: DS.sp4) {
             Image(systemName: icon)
                 .font(.system(size: 16))
-                .foregroundColor(color)
+                .foregroundStyle(color)
                 .frame(width: 36, height: 36)
                 .background(color.opacity(0.1))
                 .clipShape(Circle())
                 .overlay(Circle().stroke(color.opacity(0.3), lineWidth: 1))
-            Text(label).font(.system(size: 10, weight: .semibold)).foregroundColor(.white.opacity(0.8))
-            Text(sub).font(.system(size: 9, design: .monospaced)).foregroundColor(.white.opacity(0.4))
+            Text(label).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
+            Text(sub).font(.system(size: 9, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
         }
     }
 }
@@ -852,7 +909,7 @@ struct NodeDot: View {
 // MARK: ─── Screen 4 : Results & Logs ─────────────────────────────────
 
 struct Screen4: View {
-    @ObservedObject var trainer: TrainerViewModel
+    @Bindable var trainer: TrainerViewModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -886,7 +943,7 @@ struct Screen4: View {
 }
 
 struct DBTable: View {
-    @ObservedObject var trainer: TrainerViewModel
+    let trainer: TrainerViewModel
 
     private let cols: [(String, CGFloat)] = [
         ("Node", 80), ("Time", 60), ("Status", 70), ("Model", 80), ("Data", 50), ("Link", 50)
@@ -898,7 +955,7 @@ struct DBTable: View {
                 ForEach(cols, id: \.0) { col in
                     Text(col.0.uppercased())
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundStyle(.white.opacity(0.35))
                         .frame(width: col.1, alignment: .leading)
                 }
             }
@@ -914,7 +971,7 @@ struct DBTable: View {
                 }
             } else {
                 Text("No data yet — start a training session")
-                    .font(.system(size: 12)).foregroundColor(.white.opacity(0.3))
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.3))
                     .frame(maxWidth: .infinity).padding(.vertical, DS.sp32)
             }
         }
@@ -931,7 +988,7 @@ struct DBRow: View {
             Text(time).frame(width: 60, alignment: .leading)
             Text(status)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundColor(isLive ? DS.success : DS.cyan)
+                .foregroundStyle(isLive ? DS.success : DS.cyan)
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background((isLive ? DS.success : DS.cyan).opacity(0.12))
                 .clipShape(Capsule())
@@ -941,7 +998,7 @@ struct DBRow: View {
             Text(link).frame(width: 50, alignment: .leading)
         }
         .font(.system(size: 11, design: .monospaced))
-        .foregroundColor(.white.opacity(0.8))
+        .foregroundStyle(.white.opacity(0.8))
         .padding(.horizontal, DS.sp16).padding(.vertical, DS.sp8)
     }
 }
@@ -949,7 +1006,7 @@ struct DBRow: View {
 // MARK: - Terminal
 
 struct TerminalPanel: View {
-    @ObservedObject var trainer: TrainerViewModel
+    @Bindable var trainer: TrainerViewModel
     @State private var autoScroll = true
 
     var body: some View {
@@ -964,9 +1021,10 @@ struct TerminalPanel: View {
                     .toggleStyle(.checkbox).font(.system(size: 11))
                 Button { trainer.log = "" } label: {
                     Image(systemName: "trash").font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundStyle(.white.opacity(0.5))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear terminal output")
             }
             .padding(.horizontal, DS.sp16).padding(.vertical, DS.sp8)
             .background(Color.black.opacity(0.25))
@@ -975,13 +1033,13 @@ struct TerminalPanel: View {
                 ScrollView {
                     Text(trainer.log.isEmpty ? "Output will appear here…" : trainer.log)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(trainer.log.isEmpty ? .white.opacity(0.2) : DS.success.opacity(0.85))
+                        .foregroundStyle(trainer.log.isEmpty ? .white.opacity(0.2) : DS.success.opacity(0.85))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(DS.sp16)
                         .id("end")
                 }
                 .background(Color.black.opacity(0.4))
-                .onChange(of: trainer.log) { _ in
+                .onChange(of: trainer.log) {
                     if autoScroll { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("end", anchor: .bottom) } }
                 }
             }
@@ -989,19 +1047,19 @@ struct TerminalPanel: View {
             if trainer.isRunning {
                 HStack(spacing: DS.sp8) {
                     ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
-                    Text("Training…").font(.system(size: 11)).foregroundColor(.white.opacity(0.5))
+                    Text("Training…").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
                     Spacer()
                     if let ip = trainer.masterIP {
                         Text("\(ip):8000")
                             .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(DS.cyan.opacity(0.7))
+                            .foregroundStyle(DS.cyan.opacity(0.7))
                     }
                 }
                 .padding(.horizontal, DS.sp16).padding(.vertical, DS.sp8)
                 .background(Color.black.opacity(0.2))
             }
         }
-        .background(.ultraThinMaterial)
+        .background(Color(red: 0.12, green: 0.12, blue: 0.12))
     }
 }
 
@@ -1011,36 +1069,38 @@ enum ViewMode: String, CaseIterable {
     case sequential, fourScreen
 }
 
-// MARK: - ViewModel (untouched logic)
+// MARK: - ViewModel (@Observable)
 
-class TrainerViewModel: ObservableObject {
-    @Published var currentScreen: Int   = 1
-    @Published var viewMode: ViewMode   = .sequential
+@Observable
+@MainActor
+final class TrainerViewModel {
+    var currentScreen: Int   = 1
+    var viewMode: ViewMode   = .sequential
 
-    @Published var datasetPath: String   = ""
-    @Published var rounds: Int           = 15
-    @Published var localEpochs: Int      = 2
-    @Published var batchSize: Int        = 8
-    @Published var lr: Double            = 0.001
-    @Published var timeout: Int          = 120
-    @Published var pythonPath: String    = ""
-    @Published var detectedClasses: [String] = []
-    @Published var log: String           = ""
-    @Published var isRunning: Bool       = false
-    @Published var statusMessage: String? = nil
-    @Published var masterIP: String?     = nil
-    @Published var waitingForWorkers: Bool = false
-    @Published var workerCount: Int        = 0
+    var datasetPath: String   = ""
+    var rounds: Int           = 15
+    var localEpochs: Int      = 2
+    var batchSize: Int        = 8
+    var lr: Double            = 0.001
+    var timeout: Int          = 120
+    var pythonPath: String    = ""
+    var detectedClasses: [String] = []
+    var log: String           = ""
+    var isRunning: Bool       = false
+    var statusMessage: String? = nil
+    var masterIP: String?     = nil
+    var waitingForWorkers: Bool = false
+    var workerCount: Int        = 0
 
-    @Published var pythonVersion: String?  = nil
-    @Published var selectedModel: String   = "resnet18"
-    @Published var connectionType: String  = "LAN"
+    var pythonVersion: String?  = nil
+    var selectedModel: String   = "resnet18"
+    var connectionType: String  = "LAN"
 
-    private var process: Process?
-    private var masterFileHandle: FileHandle?
-    private var slaveFd: Int32 = -1
-    private var ptyMasterFd: Int32 = -1
-    @Published var masterScriptPath: String = ""
+    @ObservationIgnored private var process: Process?
+    @ObservationIgnored private var masterFileHandle: FileHandle?
+    @ObservationIgnored private var slaveFd: Int32 = -1
+    @ObservationIgnored private var ptyMasterFd: Int32 = -1
+    var masterScriptPath: String = ""
 
     init() {
         let candidates = [
