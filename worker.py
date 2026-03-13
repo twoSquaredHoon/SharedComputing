@@ -6,6 +6,7 @@ os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 ssl._create_default_https_context = ssl.create_default_context
 
 import time
+import threading
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,6 +15,7 @@ from torchvision import datasets, transforms, models
 from pathlib import Path
 import requests
 import socket
+import psutil
 
 # ── Config ────────────────────────────────────────────────────────────────────
 master_ip   = input("  Enter master IP address: ").strip()
@@ -86,6 +88,38 @@ def upload_weights_with_retry(worker_id, weights):
     print("  ✗ All upload attempts failed — master may have timed out this round.")
     return False
 
+
+def collect_metrics():
+    cpu = psutil.cpu_percent(interval=0)
+    mem = psutil.virtual_memory()
+    temps = psutil.sensors_temperatures() if hasattr(psutil, "sensors_temperatures") else {}
+    cpu_temp = None
+    if temps:
+        for name, entries in temps.items():
+            if entries:
+                cpu_temp = entries[0].current
+                break
+    return {
+        "cpu": cpu,
+        "ram_used": round(mem.used / (1024**3), 2),
+        "ram_total": round(mem.total / (1024**3), 2),
+        "gpu": None,
+        "temp": cpu_temp,
+    }
+
+
+def metrics_reporter(master_url, worker_id):
+    # Allow psutil to establish a baseline CPU reading
+    psutil.cpu_percent(interval=None)
+    while True:
+        try:
+            data = collect_metrics()
+            data["worker_id"] = worker_id
+            requests.post(f"{master_url}/worker_metrics", json=data, timeout=5)
+        except Exception:
+            pass
+        time.sleep(2)
+
 def main():
     print(f"\n{'='*55}")
     print(f"  WORKER: {WORKER_ID}")
@@ -120,6 +154,9 @@ def main():
     print(f"  ✓ Registered — {num_classes} classes: {classes}")
     print(f"  Rounds: {rounds}  |  Local epochs: {local_epochs}")
     print(f"  Training on {len(train_indices)} images (master-assigned split)\n")
+
+    # Start background metrics reporter
+    threading.Thread(target=metrics_reporter, args=(MASTER_URL, WORKER_ID), daemon=True).start()
 
     train_loader = get_train_loader(train_indices, batch_size, img_size)
     model        = build_model(num_classes).to(DEVICE)

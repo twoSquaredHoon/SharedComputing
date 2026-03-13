@@ -791,36 +791,42 @@ struct Screen3: View {
                 }
                 .glassCard()
 
-                // Workers
+                // Local device telemetry
                 VStack(alignment: .leading, spacing: DS.sp8) {
-                    HStack { Label_("Worker Telemetry"); Spacer(); PreviewTag() }
+                    Label_("This Device")
 
-                    // Placeholder metric bars
-                    TelemetryRow(icon: "cpu.fill", label: "CPU", value: "— %", progress: 0, tint: DS.cyan)
-                    TelemetryRow(icon: "memorychip.fill", label: "RAM", value: "— GB", progress: 0, tint: DS.purple)
-                    TelemetryRow(icon: "bolt.fill", label: "GPU", value: "— %", progress: 0, tint: DS.amber)
-                    TelemetryRow(icon: "thermometer.medium", label: "Temp", value: "— °C", progress: 0, tint: DS.danger)
+                    TelemetryRow(icon: "cpu.fill", label: "CPU",
+                                 value: String(format: "%.1f %%", trainer.localMetrics.cpuUsage),
+                                 progress: trainer.localMetrics.cpuUsage / 100,
+                                 tint: telemetryColor(trainer.localMetrics.cpuUsage))
+                    TelemetryRow(icon: "memorychip.fill", label: "RAM",
+                                 value: String(format: "%.1f / %.1f GB", trainer.localMetrics.ramUsed, trainer.localMetrics.ramTotal),
+                                 progress: trainer.localMetrics.ramTotal > 0 ? trainer.localMetrics.ramUsed / trainer.localMetrics.ramTotal : 0,
+                                 tint: telemetryColor(trainer.localMetrics.ramTotal > 0 ? trainer.localMetrics.ramUsed / trainer.localMetrics.ramTotal * 100 : 0))
+                    TelemetryRow(icon: "bolt.fill", label: "GPU",
+                                 value: trainer.localMetrics.gpuUsage >= 0 ? String(format: "%.1f %%", trainer.localMetrics.gpuUsage) : "N/A",
+                                 progress: trainer.localMetrics.gpuUsage >= 0 ? trainer.localMetrics.gpuUsage / 100 : 0,
+                                 tint: trainer.localMetrics.gpuUsage >= 0 ? telemetryColor(trainer.localMetrics.gpuUsage) : .gray)
+                    TelemetryRow(icon: "thermometer.medium", label: "Temp",
+                                 value: trainer.localMetrics.temperature >= 0 ? String(format: "%.0f °C", trainer.localMetrics.temperature) : "N/A",
+                                 progress: trainer.localMetrics.temperature >= 0 ? min(trainer.localMetrics.temperature / 110, 1) : 0,
+                                 tint: trainer.localMetrics.temperature >= 0 ? telemetryColor(trainer.localMetrics.temperature) : .gray)
+                }
+                .glassCard()
 
-                    if trainer.workerCount == 0 {
+                // Remote worker telemetry
+                VStack(alignment: .leading, spacing: DS.sp8) {
+                    Label_("Worker Telemetry")
+
+                    if trainer.remoteWorkerMetrics.isEmpty {
                         Text("No workers connected — metrics unavailable")
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.3))
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.vertical, DS.sp8)
                     } else {
-                        ForEach(0..<trainer.workerCount, id: \.self) { i in
-                            HStack(spacing: DS.sp12) {
-                                Image(systemName: "desktopcomputer")
-                                    .foregroundStyle(DS.amber)
-                                Text("Worker \(i + 1)").font(.system(size: 13, weight: .medium))
-                                Spacer()
-                                Text("CPU: — | RAM: — | GPU: —")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(.white.opacity(0.35))
-                            }
-                            .padding(DS.sp12)
-                            .background(Color.white.opacity(0.04))
-                            .clipShape(RoundedRectangle(cornerRadius: DS.r8, style: .continuous))
+                        ForEach(trainer.remoteWorkerMetrics) { worker in
+                            WorkerMetricsCard(worker: worker)
                         }
                     }
                 }
@@ -828,6 +834,67 @@ struct Screen3: View {
             }
             .padding(DS.sp24)
         }
+    }
+
+    private func telemetryColor(_ pct: Double) -> Color {
+        if pct < 60 { return DS.success }
+        if pct < 80 { return DS.amber }
+        return DS.danger
+    }
+}
+
+struct WorkerMetricsCard: View {
+    let worker: WorkerMetrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.sp8) {
+            HStack(spacing: DS.sp8) {
+                Image(systemName: "desktopcomputer")
+                    .foregroundStyle(worker.stale ? .gray : DS.amber)
+                Text(worker.id)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(worker.stale ? 0.4 : 0.9))
+                Spacer()
+                if worker.stale {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10))
+                        Text("Stale")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundStyle(DS.amber)
+                }
+            }
+            TelemetryRow(icon: "cpu.fill", label: "CPU",
+                         value: String(format: "%.1f %%", worker.cpu),
+                         progress: worker.cpu / 100,
+                         tint: cardColor(worker.cpu))
+            TelemetryRow(icon: "memorychip.fill", label: "RAM",
+                         value: String(format: "%.1f / %.1f GB", worker.ramUsed, worker.ramTotal),
+                         progress: worker.ramTotal > 0 ? worker.ramUsed / worker.ramTotal : 0,
+                         tint: cardColor(worker.ramTotal > 0 ? worker.ramUsed / worker.ramTotal * 100 : 0))
+            TelemetryRow(icon: "bolt.fill", label: "GPU",
+                         value: worker.gpu != nil ? String(format: "%.1f %%", worker.gpu!) : "N/A",
+                         progress: worker.gpu != nil ? (worker.gpu! / 100) : 0,
+                         tint: worker.gpu != nil ? cardColor(worker.gpu!) : .gray)
+            TelemetryRow(icon: "thermometer.medium", label: "Temp",
+                         value: worker.temp != nil ? String(format: "%.0f °C", worker.temp!) : "N/A",
+                         progress: worker.temp != nil ? min(worker.temp! / 110, 1) : 0,
+                         tint: worker.temp != nil ? cardColor(worker.temp!) : .gray)
+        }
+        .padding(DS.sp12)
+        .background(Color.white.opacity(worker.stale ? 0.02 : 0.04))
+        .clipShape(RoundedRectangle(cornerRadius: DS.r8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.r8, style: .continuous)
+                .stroke(worker.stale ? DS.amber.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
+    }
+
+    private func cardColor(_ pct: Double) -> Color {
+        if pct < 60 { return DS.success }
+        if pct < 80 { return DS.amber }
+        return DS.danger
     }
 }
 
@@ -1096,6 +1163,10 @@ final class TrainerViewModel {
     var selectedModel: String   = "resnet18"
     var connectionType: String  = "LAN"
 
+    var localMetrics = SystemMetrics()
+    var remoteWorkerMetrics: [WorkerMetrics] = []
+    @ObservationIgnored private var metricsTimer: Timer?
+
     @ObservationIgnored private var process: Process?
     @ObservationIgnored private var masterFileHandle: FileHandle?
     @ObservationIgnored private var slaveFd: Int32 = -1
@@ -1216,6 +1287,7 @@ final class TrainerViewModel {
 
         process?.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
+                self?.stopMetricsPolling()
                 self?.cleanup()
                 self?.isRunning = false
                 self?.statusMessage = "Training finished."
@@ -1234,6 +1306,7 @@ final class TrainerViewModel {
             isRunning = true
             statusMessage = "Server started — connect workers, then begin training."
             log += "▶ \(pythonPath) \(args.dropFirst().joined(separator: " "))\n\n"
+            startMetricsPolling()
         } catch {
             statusMessage = "✗ \(error.localizedDescription)"
             cleanup()
@@ -1241,6 +1314,7 @@ final class TrainerViewModel {
     }
 
     func stop() {
+        stopMetricsPolling()
         process?.terminate(); cleanup()
         isRunning = false; statusMessage = "Stopped."
         log += "\n⛔ Stopped by user.\n"
@@ -1256,6 +1330,47 @@ final class TrainerViewModel {
     func sendEnter() {
         guard ptyMasterFd >= 0 else { return }
         var nl: UInt8 = 10; write(ptyMasterFd, &nl, 1)
+    }
+
+    // MARK: - Remote Worker Metrics Polling
+
+    private func startMetricsPolling() {
+        metricsTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.fetchWorkerMetrics()
+            }
+        }
+    }
+
+    private func stopMetricsPolling() {
+        metricsTimer?.invalidate()
+        metricsTimer = nil
+        remoteWorkerMetrics = []
+    }
+
+    private func fetchWorkerMetrics() {
+        guard let ip = masterIP else { return }
+        let urlString = "http://\(ip):8000/workers/metrics"
+        guard let url = URL(string: urlString) else { return }
+        let request = URLRequest(url: url, timeoutInterval: 5)
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+            guard let data = data, error == nil else { return }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            var metrics: [WorkerMetrics] = []
+            for (wid, value) in json {
+                guard let dict = value as? [String: Any] else { continue }
+                let cpu = (dict["cpu"] as? NSNumber)?.doubleValue ?? 0
+                let ramUsed = (dict["ram_used"] as? NSNumber)?.doubleValue ?? 0
+                let ramTotal = (dict["ram_total"] as? NSNumber)?.doubleValue ?? 0
+                let gpu = (dict["gpu"] as? NSNumber)?.doubleValue
+                let temp = (dict["temp"] as? NSNumber)?.doubleValue
+                let stale = (dict["stale"] as? Bool) ?? false
+                metrics.append(WorkerMetrics(id: wid, cpu: cpu, ramUsed: ramUsed, ramTotal: ramTotal, gpu: gpu, temp: temp, stale: stale))
+            }
+            DispatchQueue.main.async {
+                self?.remoteWorkerMetrics = metrics.sorted { $0.id < $1.id }
+            }
+        }.resume()
     }
 }
 

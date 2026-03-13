@@ -114,6 +114,8 @@ val_transform = transforms.Compose([
 # ── App state ─────────────────────────────────────────────────────────────────
 app = FastAPI()
 
+worker_metrics_store = {}  # {worker_id: {cpu, ram_used, ram_total, gpu, temp, timestamp}}
+
 state = {
     "global_weights":     None,
     "start_event":        threading.Event(),
@@ -224,6 +226,24 @@ def status():
         "registered_workers": list(state["registered_workers"]),
         "updates_received":   list(state["worker_updates"].keys()),
     }
+
+@app.post("/worker_metrics")
+def receive_worker_metrics(data: dict):
+    worker_id = data.get("worker_id")
+    if not worker_id:
+        raise HTTPException(status_code=400, detail="worker_id required")
+    data["timestamp"] = time.time()
+    worker_metrics_store[worker_id] = data
+    return {"status": "ok"}
+
+@app.get("/workers/metrics")
+def get_worker_metrics():
+    now = time.time()
+    result = {}
+    for wid, m in worker_metrics_store.items():
+        m["stale"] = (now - m.get("timestamp", 0)) > 10
+        result[wid] = m
+    return result
 
 # ── Training orchestration ────────────────────────────────────────────────────
 def run_master():
