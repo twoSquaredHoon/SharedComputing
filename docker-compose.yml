@@ -1,0 +1,15 @@
+services:
+  backend:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+      - "8080:8080"
+    environment:
+      ADVERTISED_HOST: ${ADVERTISED_HOST:?set ADVERTISED_HOST}
+      DATASET_ROOT: /datasets
+      RESULTS_DB: /runtime/results.db
+    volumes:
+      - ${DATASET_ROOT_HOST:?set DATASET_ROOT_HOST}:/datasets:ro
+      - ./runtime:/runtime
+      - ./runtime/models:/app/models
