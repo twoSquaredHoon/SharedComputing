@@ -63,6 +63,9 @@ class CreateRunRequest(BaseModel):
     learning_rate: float = Field(gt=0)
     round_timeout_sec: int = Field(gt=0)
     connection_type: Literal["LAN", "WiFi"] = "LAN"
+    # ── New fields for mode and model selection ────────────────────────────────
+    mode: Literal["quality", "speed"] = "quality"
+    model: Literal["resnet18", "resnet50", "efficientnet_b0", "efficientnet_b3", "vit"] = "resnet18"
 
 
 @dataclass
@@ -110,6 +113,7 @@ class SQLiteStore:
                     val_images INTEGER NOT NULL,
                     test_images INTEGER NOT NULL,
                     model_name TEXT NOT NULL,
+                    training_mode TEXT NOT NULL DEFAULT 'quality',
                     connection_type TEXT NOT NULL,
                     rounds INTEGER NOT NULL,
                     local_epochs INTEGER NOT NULL,
@@ -156,10 +160,10 @@ class SQLiteStore:
                 """
                 INSERT INTO runs (
                     status, started_at, dataset_subpath, dataset_total_images,
-                    train_images, val_images, test_images, model_name,
+                    train_images, val_images, test_images, model_name, training_mode,
                     connection_type, rounds, local_epochs, batch_size,
                     learning_rate, round_timeout_sec, advertised_host, master_port
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "waiting_workers",
@@ -169,7 +173,8 @@ class SQLiteStore:
                     train_images,
                     val_images,
                     test_images,
-                    "resnet18",
+                    request.model,
+                    request.mode,
                     request.connection_type,
                     request.rounds,
                     request.local_epochs,
@@ -397,18 +402,14 @@ class RunManager:
             [
                 sys.executable,
                 str(MASTER_SCRIPT),
-                "--dataset",
-                str(dataset_path),
-                "--rounds",
-                str(request.rounds),
-                "--epochs",
-                str(request.local_epochs),
-                "--batch",
-                str(request.batch_size),
-                "--lr",
-                str(request.learning_rate),
-                "--timeout",
-                str(request.round_timeout_sec),
+                "--dataset", str(dataset_path),
+                "--rounds",  str(request.rounds),
+                "--epochs",  str(request.local_epochs),
+                "--batch",   str(request.batch_size),
+                "--lr",      str(request.learning_rate),
+                "--timeout", str(request.round_timeout_sec),
+                "--mode",    request.mode,
+                "--model",   request.model,
             ],
             cwd=REPO_ROOT,
             stdin=slave_fd,
