@@ -66,7 +66,7 @@ def get_train_loader(train_indices, batch_size, img_size):
                       batch_size=batch_size, shuffle=True, num_workers=0)
 
 def fetch_my_indices():
-    """For split mode: fetch this worker's assigned indices from master."""
+    """For speed mode: fetch this worker's assigned indices from master."""
     while True:
         try:
             r = requests.get(f"{MASTER_URL}/my_indices/{WORKER_ID}", timeout=10)
@@ -157,9 +157,9 @@ def main():
     print(f"  Mode: {mode.upper()}")
     print(f"  Rounds: {rounds}  |  Local epochs: {local_epochs}")
 
-    # ── For split mode, fetch this worker's specific indices ──────────────────
-    if mode == "split":
-        print(f"  Split mode — fetching assigned indices from master...")
+    # ── For speed mode, fetch this worker's specific indices ──────────────────
+    if mode == "speed":
+        print(f"  Speed mode — fetching assigned indices from master...")
         train_indices = fetch_my_indices()
         print(f"  ✓ Got {len(train_indices)} assigned images for this worker")
     else:

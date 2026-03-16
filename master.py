@@ -141,6 +141,7 @@ def run_setup():
             print(f"  ⚠ Invalid input, using default: {default}")
             return cast(default)
 
+    # 1. Dataset folder
     if args.dataset:
         dataset_dir = Path(args.dataset)
     else:
@@ -152,13 +153,7 @@ def run_setup():
             if dataset_dir.exists(): break
             print(f"  ⚠ Folder not found: {dataset_dir}  — please try again.")
 
-    rounds       = args.rounds   or prompt("Rounds",                  15,    int)
-    local_epochs = args.epochs   or prompt("Local epochs per round",   2,    int)
-    batch_size   = args.batch    or prompt("Batch size",               8,    int)
-    lr           = args.lr       or prompt("Learning rate",            1e-3, float)
-    timeout      = args.timeout  or prompt("Round timeout (seconds)", 120,   int)
-
-    # Model selection
+    # 2. Model selection
     AVAILABLE_MODELS = [
         ("resnet18",        "ResNet18",        True),
         ("resnet50",        "ResNet50",        False),
@@ -186,7 +181,7 @@ def run_setup():
             selected_model = key
         print(f"  Model: {label}")
 
-    # Mode selection
+    # 3. Mode selection
     if args.mode:
         mode = args.mode
     else:
@@ -197,6 +192,14 @@ def run_setup():
         chosen = arrow_select("Training Mode", mode_options, default=0)
         mode = ["quality", "split"][chosen]
         print(f"  Mode: {mode.capitalize()}")
+
+    # 4. Hyperparameters
+    print()
+    rounds       = args.rounds   or prompt("Rounds",                  15,    int)
+    local_epochs = args.epochs   or prompt("Local epochs per round",   2,    int)
+    batch_size   = args.batch    or prompt("Batch size",               8,    int)
+    lr           = args.lr       or prompt("Learning rate",            1e-3, float)
+    timeout      = args.timeout  or prompt("Round timeout (seconds)", 120,   int)
 
     print()
     return dataset_dir, rounds, local_epochs, batch_size, lr, timeout, mode, selected_model
