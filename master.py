@@ -54,6 +54,8 @@ def run_setup():
     parser.add_argument("--batch",    type=int,   default=None)
     parser.add_argument("--lr",       type=float, default=None)
     parser.add_argument("--timeout",  type=int,   default=None)
+    parser.add_argument("--mode",     type=str,   default=None,
+                        choices=["quality", "split"])
     args = parser.parse_args()
 
     # If all args provided (e.g. launched from Swift app), skip wizard
@@ -61,7 +63,7 @@ def run_setup():
         dataset_dir = Path(args.dataset)
         if not dataset_dir.is_absolute():
             dataset_dir = BASE / dataset_dir
-        return dataset_dir, args.rounds, args.epochs, args.batch, args.lr, args.timeout
+        return dataset_dir, args.rounds, args.epochs, args.batch, args.lr, args.timeout, args.mode
 
     # Otherwise run interactive wizard for any missing values
     print(f"\n{'='*55}")
@@ -93,10 +95,24 @@ def run_setup():
     batch_size   = args.batch    or prompt("Batch size",               8,    int)
     lr           = args.lr       or prompt("Learning rate",            1e-3, float)
     timeout      = args.timeout  or prompt("Round timeout (seconds)", 120,   int)
-    print()
-    return dataset_dir, rounds, local_epochs, batch_size, lr, timeout
 
-DATASET_DIR, ROUNDS, LOCAL_EPOCHS, BATCH_SIZE, LR, ROUND_TIMEOUT = run_setup()
+    # Mode selection
+    if args.mode:
+        mode = args.mode
+    else:
+        print(f"\n  Training mode:")
+        print(f"    quality — each worker trains on the full dataset (better accuracy)")
+        print(f"    split   — dataset is divided between workers (faster rounds)")
+        while True:
+            raw = input(f"  Mode (default: quality): ").strip().lower()
+            if raw == "": mode = "quality"; break
+            if raw in ("quality", "split"): mode = raw; break
+            print(f"  ⚠ Enter 'quality' or 'split'")
+
+    print()
+    return dataset_dir, rounds, local_epochs, batch_size, lr, timeout, mode
+
+DATASET_DIR, ROUNDS, LOCAL_EPOCHS, BATCH_SIZE, LR, ROUND_TIMEOUT, TRAINING_MODE = run_setup()
 CKPT_PATH = CKPT_DIR / "best_model_net.pth"
 
 MASTER_DEVICE = (
@@ -125,7 +141,8 @@ state = {
     "round_ready":        threading.Event(),
     "num_classes":        None,
     "classes":            None,
-    "train_indices":      None,
+    "train_indices":      None,   # quality mode: full list sent to all workers
+    "worker_index_map":   {},     # split mode: {worker_id: [indices]}
     "config":             {"rounds": ROUNDS},
 }
 
@@ -141,8 +158,6 @@ class WeightsUpdate(BaseModel):
 def model_to_dict(model):
     return {k: v.cpu().tolist() for k, v in model.state_dict().items()}
 
-# FIX: preserve original tensor dtypes to avoid crash on integer buffers
-# (e.g. ResNet18's num_batches_tracked is a LongTensor, not float)
 def dict_to_state(d, reference_state=None):
     result = {}
     for k, v in d.items():
@@ -172,12 +187,23 @@ def evaluate(model, loader):
     n = len(loader.dataset)
     return total_loss / n, correct / n
 
+def assign_split_indices(train_indices, worker_ids):
+    """Divide train_indices evenly across workers for split mode."""
+    n = len(worker_ids)
+    chunks = [train_indices[i::n] for i in range(n)]
+    return {wid: chunk for wid, chunk in zip(worker_ids, chunks)}
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.post("/register")
 def register(req: RegisterRequest):
     state["registered_workers"].add(req.worker_id)
     print(f"  ✓ Worker registered: {req.worker_id}  "
           f"(total: {len(state['registered_workers'])})")
+
+    # For split mode, indices are assigned after all workers connect (at training start).
+    # For now send the full list — it will be overridden for split mode once training begins.
+    indices_for_worker = state["train_indices"] or []
+
     return {
         "status":        "ok",
         "num_classes":   state["num_classes"],
@@ -187,8 +213,8 @@ def register(req: RegisterRequest):
         "batch_size":    BATCH_SIZE,
         "img_size":      IMG_SIZE,
         "lr":            LR,
-        # FIX: send the canonical train indices so all workers use the same split
-        "train_indices": state["train_indices"],
+        "mode":          TRAINING_MODE,
+        "train_indices": indices_for_worker,
     }
 
 @app.get("/weights")
@@ -197,9 +223,18 @@ def get_weights():
         raise HTTPException(status_code=503, detail="Weights not ready yet")
     return {"round": state["round"], "weights": state["global_weights"], "done": state["round"] > ROUNDS}
 
+# ── New endpoint: worker fetches its assigned indices for split mode ───────────
+@app.get("/my_indices/{worker_id}")
+def get_my_indices(worker_id: str):
+    if TRAINING_MODE == "quality":
+        return {"train_indices": state["train_indices"]}
+    indices = state["worker_index_map"].get(worker_id)
+    if indices is None:
+        raise HTTPException(status_code=404, detail="No indices assigned yet — wait for training to start")
+    return {"train_indices": indices}
+
 @app.post("/update")
 def receive_update(update: WeightsUpdate):
-    # FIX: ignore duplicate or late submissions from the same worker
     if update.worker_id not in state["registered_workers"]:
         raise HTTPException(status_code=400, detail="Unknown worker — register first")
     if update.worker_id in state["worker_updates"]:
@@ -225,6 +260,7 @@ def status():
         "rounds_total":       state["config"]["rounds"],
         "registered_workers": list(state["registered_workers"]),
         "updates_received":   list(state["worker_updates"].keys()),
+        "mode":               TRAINING_MODE,
     }
 
 @app.post("/worker_metrics")
@@ -264,7 +300,6 @@ def run_master():
         generator=torch.Generator().manual_seed(SEED)
     )
 
-    # FIX: publish the exact train indices so workers use the same split
     state["train_indices"] = list(train_set.indices)
 
     eval_dataset = datasets.ImageFolder(str(DATASET_DIR), transform=val_transform)
@@ -283,6 +318,7 @@ def run_master():
     print(f"  NETWORK DISTRIBUTED TRAINING (MASTER)")
     print(f"{'='*55}")
     print(f"  Device        : {MASTER_DEVICE}")
+    print(f"  Mode          : {TRAINING_MODE.upper()}")
     print(f"  Classes       : {full_dataset.classes}")
     print(f"  Dataset       : {total} images  (train={n_train} val={n_val} test={n_test})")
     print(f"  Rounds        : {ROUNDS}  ×  {LOCAL_EPOCHS} local epoch(s)")
@@ -297,23 +333,32 @@ def run_master():
     except EOFError:
         pass
 
-    num_workers = len(state["registered_workers"])
-    print(f"  Starting training with {num_workers} worker(s)\n")
+    num_workers   = len(state["registered_workers"])
+    worker_ids    = sorted(state["registered_workers"])
+
+    # ── Assign indices based on mode ──────────────────────────────────────────
+    if TRAINING_MODE == "split":
+        state["worker_index_map"] = assign_split_indices(state["train_indices"], worker_ids)
+        print(f"  Split mode — dataset divided across {num_workers} worker(s):")
+        for wid, idxs in state["worker_index_map"].items():
+            print(f"    {wid}: {len(idxs)} images")
+    else:
+        print(f"  Quality mode — all {num_workers} worker(s) train on full dataset ({n_train} images)")
+
+    print(f"\n  Starting training with {num_workers} worker(s)\n")
 
     CKPT_DIR.mkdir(exist_ok=True)
     best_val_acc = 0.0
     history      = []
     train_start  = time.time()
 
-    reference_state = global_model.state_dict()  # used for dtype restoration
+    reference_state = global_model.state_dict()
 
     for rnd in range(1, ROUNDS + 1):
         t0 = time.time()
         state["round"]          = rnd
         state["worker_updates"] = {}
 
-        # serialize weights BEFORE clearing event so timeout starts after
-        # weights are actually available to workers
         print(f"  Round {rnd}/{ROUNDS} — serializing weights...")
         state["global_weights"] = model_to_dict(global_model)
         state["round_ready"].clear()
@@ -328,7 +373,6 @@ def run_master():
                 print(f"  ✗ No updates received for round {rnd} — skipping aggregation.")
                 continue
 
-        # FIX: pass reference_state so integer buffers keep their correct dtype
         worker_states = [
             dict_to_state(w, reference_state)
             for w in state["worker_updates"].values()
@@ -374,6 +418,14 @@ def run_master():
         f"| {'✓' if r['saved'] else ''} |"
         for r in history
     )
+
+    # Build per-worker index summary for split mode
+    split_info = ""
+    if TRAINING_MODE == "split":
+        split_info = "\n## Data Split\n| Worker | Images |\n|--------|-------|\n"
+        for wid, idxs in state["worker_index_map"].items():
+            split_info += f"| {wid} | {len(idxs)} |\n"
+
     with open(SUMMARY, "w") as f:
         f.write(f"""# Training Summary — Network Distributed
 
@@ -390,6 +442,7 @@ def run_master():
 | Param | Value |
 |-------|-------|
 | Architecture | ResNet18 (transfer learning, frozen backbone) |
+| Training mode | {TRAINING_MODE} |
 | Image size | {IMG_SIZE}×{IMG_SIZE} |
 | Batch size | {BATCH_SIZE} |
 | Rounds | {ROUNDS} |
@@ -397,7 +450,7 @@ def run_master():
 | Learning rate | {LR} |
 | Aggregation | FedAvg |
 | Round timeout | {ROUND_TIMEOUT}s |
-
+{split_info}
 ## Results
 | Metric | Value |
 |--------|-------|

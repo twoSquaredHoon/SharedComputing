@@ -20,13 +20,12 @@ import psutil
 # ── Config ────────────────────────────────────────────────────────────────────
 master_ip   = input("  Enter master IP address: ").strip()
 MASTER_URL  = f"http://{master_ip}:8000"
-WORKER_ID   = socket.gethostname()          # uses this machine's hostname automatically
+WORKER_ID   = socket.gethostname()
 DATASET_DIR = Path(__file__).parent / "data"
 SEED        = 42
 
-# How many times to retry sending weights before giving up
-UPLOAD_RETRIES = 5
-UPLOAD_RETRY_DELAY = 3  # seconds between retries
+UPLOAD_RETRIES    = 5
+UPLOAD_RETRY_DELAY = 3
 
 DEVICE = (
     "mps"  if torch.backends.mps.is_available() else
@@ -41,8 +40,6 @@ def build_model(num_classes):
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     return model
 
-# FIX: preserve original tensor dtypes to avoid crash on integer buffers
-# (e.g. ResNet18's num_batches_tracked is a LongTensor, not float)
 def dict_to_state(d, reference_state=None):
     result = {}
     for k, v in d.items():
@@ -65,13 +62,21 @@ def get_train_loader(train_indices, batch_size, img_size):
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
     dataset = datasets.ImageFolder(str(DATASET_DIR), transform=train_transform)
-
-    # FIX: use the exact indices sent by master instead of a local re-split,
-    # guaranteeing workers never touch validation or test data
     return DataLoader(Subset(dataset, train_indices),
                       batch_size=batch_size, shuffle=True, num_workers=0)
 
-# FIX: retry upload so a transient network blip doesn't hang the master forever
+def fetch_my_indices():
+    """For split mode: fetch this worker's assigned indices from master."""
+    while True:
+        try:
+            r = requests.get(f"{MASTER_URL}/my_indices/{WORKER_ID}", timeout=10)
+            if r.status_code == 200:
+                return r.json()["train_indices"]
+            # 404 means indices not assigned yet — wait for training to start
+        except Exception as e:
+            print(f"  ⚠ Could not fetch indices: {e}")
+        time.sleep(2)
+
 def upload_weights_with_retry(worker_id, weights):
     for attempt in range(1, UPLOAD_RETRIES + 1):
         try:
@@ -87,7 +92,6 @@ def upload_weights_with_retry(worker_id, weights):
                 time.sleep(UPLOAD_RETRY_DELAY)
     print("  ✗ All upload attempts failed — master may have timed out this round.")
     return False
-
 
 def collect_metrics():
     cpu = psutil.cpu_percent(interval=0)
@@ -107,9 +111,7 @@ def collect_metrics():
         "temp": cpu_temp,
     }
 
-
 def metrics_reporter(master_url, worker_id):
-    # Allow psutil to establish a baseline CPU reading
     psutil.cpu_percent(interval=None)
     while True:
         try:
@@ -148,12 +150,22 @@ def main():
     batch_size    = config["batch_size"]
     img_size      = config["img_size"]
     lr            = config["lr"]
-    # FIX: use master's canonical train indices — same split, no data leakage
+    mode          = config.get("mode", "quality")
     train_indices = config["train_indices"]
 
     print(f"  ✓ Registered — {num_classes} classes: {classes}")
+    print(f"  Mode: {mode.upper()}")
     print(f"  Rounds: {rounds}  |  Local epochs: {local_epochs}")
-    print(f"  Training on {len(train_indices)} images (master-assigned split)\n")
+
+    # ── For split mode, fetch this worker's specific indices ──────────────────
+    if mode == "split":
+        print(f"  Split mode — fetching assigned indices from master...")
+        train_indices = fetch_my_indices()
+        print(f"  ✓ Got {len(train_indices)} assigned images for this worker")
+    else:
+        print(f"  Quality mode — training on full dataset ({len(train_indices)} images)")
+
+    print()
 
     # Start background metrics reporter
     threading.Thread(target=metrics_reporter, args=(MASTER_URL, WORKER_ID), daemon=True).start()
@@ -161,11 +173,10 @@ def main():
     train_loader = get_train_loader(train_indices, batch_size, img_size)
     model        = build_model(num_classes).to(DEVICE)
     criterion    = nn.CrossEntropyLoss()
-    reference_state = model.state_dict()  # used for dtype restoration
+    reference_state = model.state_dict()
 
     # ── Training rounds ───────────────────────────────────────────────────────
     for rnd in range(1, rounds + 1):
-        # Poll master for new weights for this round
         print(f"  Waiting for round {rnd} weights...")
         weights_resp = None
         while True:
@@ -179,18 +190,13 @@ def main():
                     if data.get("round", -1) >= rnd:
                         weights_resp = data
                         break
-                # 503 = weights not ready yet, just keep polling
             except Exception as e:
                 print(f"  ⚠ Poll error: {e}")
             time.sleep(1)
 
-        # FIX: restore dtypes using reference_state
         model.load_state_dict(dict_to_state(weights_resp["weights"], reference_state))
-
-        # Reinitialise optimizer each round (global weights may have shifted a lot)
         optimizer = optim.Adam(model.fc.parameters(), lr=lr)
 
-        # Train locally
         t0 = time.time()
         model.train()
         for epoch in range(local_epochs):
@@ -210,8 +216,6 @@ def main():
                   f"acc={correct/total:.3f}")
 
         elapsed = time.time() - t0
-
-        # FIX: retry upload rather than fire-and-forget
         success = upload_weights_with_retry(WORKER_ID, model_to_dict(model))
         status  = "weights sent" if success else "upload failed"
         print(f"  → Round {rnd}/{rounds} done ({elapsed:.1f}s) — {status}\n")
