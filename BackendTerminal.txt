@@ -52,19 +52,20 @@ Replace `1` with your `run_id`.
 curl http://localhost:8080/runs/1
 ```
 
----
-
-## Option C — Docker
+--------------------------------------------
+## Docker
 
 ### Terminal 1 (Master Mac) — start with Docker
 ```bash
 cd ~/Documents/2.Area/SharedComputing
+docker compose down 2>/dev/null
+rm -f ~/Documents/2.Area/SharedComputing/runtime/results.db
 export ADVERTISED_HOST=$(ipconfig getifaddr en0)
 export DATASET_ROOT_HOST=/Users/seunghoon/Downloads/data
 docker compose up
 ```
 Leave this running.
-
+ 
 ### Terminal 2 (Master Mac) — create a run
 ```bash
 curl -X POST http://localhost:8080/runs \
@@ -80,7 +81,7 @@ curl -X POST http://localhost:8080/runs \
     "model": "resnet18"
   }'
 ```
-
+ 
 ### Terminal 3 (Worker Mac) — connect worker
 ```bash
 source .venv/bin/activate
@@ -88,24 +89,23 @@ cd ~/Documents/2.Areas/SharedComputing
 python3 worker.py
 ```
 Enter the master IP when prompted. Wait for `✓ Registered`.
-
+ 
 ### Terminal 2 (Master Mac) — begin training
 ```bash
 curl -X POST http://localhost:8080/runs/1/begin
 ```
-
+ 
 ### Terminal 2 (Master Mac) — check results when done
 ```bash
 curl http://localhost:8080/runs/1
 ```
-
+ 
 ---
-
+ 
 ## If something goes wrong
 ```bash
+docker compose down
 kill $(lsof -ti:8000) 2>/dev/null
 kill $(lsof -ti:8080) 2>/dev/null
 rm -f ~/Documents/2.Area/SharedComputing/runtime/results.db
-docker compose down
 ```
-Then start again from the beginning.
