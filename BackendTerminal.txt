@@ -1,0 +1,111 @@
+# How to Run SharedComputing: backend + terminal
+
+### Clean up
+kill $(lsof -ti:8000) 2>/dev/null
+kill $(lsof -ti:8080) 2>/dev/null
+rm -f ~/Documents/2.Area/SharedComputing/runtime/results.db
+docker compose down 2>/dev/null
+
+### Terminal 1 (Master Mac) — start backend
+```bash
+source ~/venv_shared/bin/activate
+cd ~/Documents/2.Area/SharedComputing
+export ADVERTISED_HOST=$(ipconfig getifaddr en0)
+export DATASET_ROOT=/Users/seunghoon/Downloads/data
+python3 backend_service.py
+```
+Leave this running.
+
+### Terminal 2 (Master Mac) — create a run
+```bash
+curl -X POST http://localhost:8080/runs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dataset_subpath": ".",
+    "rounds": 3,
+    "local_epochs": 2,
+    "batch_size": 8,
+    "learning_rate": 0.001,
+    "round_timeout_sec": 120,
+    "mode": "quality",
+    "model": "resnet18"
+  }'
+```
+Returns `run_id`. Note the number.
+
+### Terminal 3 (Worker Mac) — connect worker
+```bash
+source .venv/bin/activate
+cd ~/Documents/2.Areas/SharedComputing
+python3 worker.py
+```
+Enter the master IP when prompted. Wait for `✓ Registered`.
+
+### Terminal 2 (Master Mac) — begin training
+```bash
+curl -X POST http://localhost:8080/runs/1/begin
+```
+Replace `1` with your `run_id`.
+
+### Terminal 2 (Master Mac) — check results when done
+```bash
+curl http://localhost:8080/runs/1
+```
+
+---
+
+## Option C — Docker
+
+### Terminal 1 (Master Mac) — start with Docker
+```bash
+cd ~/Documents/2.Area/SharedComputing
+export ADVERTISED_HOST=$(ipconfig getifaddr en0)
+export DATASET_ROOT_HOST=/Users/seunghoon/Downloads/data
+docker compose up
+```
+Leave this running.
+
+### Terminal 2 (Master Mac) — create a run
+```bash
+curl -X POST http://localhost:8080/runs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dataset_subpath": ".",
+    "rounds": 3,
+    "local_epochs": 2,
+    "batch_size": 8,
+    "learning_rate": 0.001,
+    "round_timeout_sec": 120,
+    "mode": "quality",
+    "model": "resnet18"
+  }'
+```
+
+### Terminal 3 (Worker Mac) — connect worker
+```bash
+source .venv/bin/activate
+cd ~/Documents/2.Areas/SharedComputing
+python3 worker.py
+```
+Enter the master IP when prompted. Wait for `✓ Registered`.
+
+### Terminal 2 (Master Mac) — begin training
+```bash
+curl -X POST http://localhost:8080/runs/1/begin
+```
+
+### Terminal 2 (Master Mac) — check results when done
+```bash
+curl http://localhost:8080/runs/1
+```
+
+---
+
+## If something goes wrong
+```bash
+kill $(lsof -ti:8000) 2>/dev/null
+kill $(lsof -ti:8080) 2>/dev/null
+rm -f ~/Documents/2.Area/SharedComputing/runtime/results.db
+docker compose down
+```
+Then start again from the beginning.

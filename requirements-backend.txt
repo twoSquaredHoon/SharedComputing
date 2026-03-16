@@ -1,3 +1,4 @@
 certifi
 fastapi
 uvicorn[standard]
+requests

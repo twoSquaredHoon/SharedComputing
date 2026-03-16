@@ -3,7 +3,7 @@
 ## Run info
 | | |
 |--|--|
-| Date | 2026-03-16 16:50:57 |
+| Date | 2026-03-16 17:53:45 |
 | Master | 10.141.67.141:8000 |
 | Workers | ['shs-MacBook-Pro.local'] |
 | Dataset | 308 images (train=215, val=46, test=47) |
@@ -16,7 +16,7 @@
 | Training mode | quality |
 | Image size | 224×224 |
 | Batch size | 8 |
-| Rounds | 2 |
+| Rounds | 3 |
 | Local epochs per round | 2 |
 | Learning rate | 0.001 |
 | Aggregation | FedAvg |
@@ -25,12 +25,13 @@
 ## Results
 | Metric | Value |
 |--------|-------|
-| Best val accuracy | 1.000 (round 2) |
-| Test accuracy | 0.957 |
-| Total training time | 404.7s |
+| Best val accuracy | 1.000 (round 1) |
+| Test accuracy | 0.979 |
+| Total training time | 666.0s |
 
 ## Per-round log
 | Round | Val Loss | Val Acc | Time | Workers | Saved |
 |------:|---------:|--------:|-----:|--------:|:-----:|
-|     1 | 0.2741 | 0.935 | 206.1s | 1/1 | ✓ |
-|     2 | 0.1152 | 1.000 | 198.5s | 1/1 | ✓ |
+|     1 | 0.2353 | 1.000 | 217.0s | 1/1 | ✓ |
+|     2 | 0.1624 | 0.957 | 231.2s | 1/1 |  |
+|     3 | 0.1092 | 0.978 | 217.8s | 1/1 |  |
