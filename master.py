@@ -7,6 +7,7 @@ ssl._create_default_https_context = ssl.create_default_context
 
 import time
 import threading
+import curses
 import torch
 import torch.nn as nn
 from torchvision import datasets, models
@@ -17,6 +18,60 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
 import socket
+
+# ── Arrow-key menu selector ───────────────────────────────────────────────────
+def arrow_select(title, options, default=0):
+    """
+    options: list of (label, subtitle, enabled) tuples
+    Returns index of selected option.
+    Falls back to simple numbered input if terminal doesn't support curses.
+    """
+    def _menu(stdscr, options, default):
+        curses.curs_set(0)
+        curses.start_color()
+        curses.init_pair(1, curses.COLOR_CYAN,  -1)   # selected
+        curses.init_pair(2, curses.COLOR_WHITE, -1)   # normal
+        curses.init_pair(3, curses.COLOR_BLACK, -1)   # disabled
+        idx = default
+        while True:
+            stdscr.clear()
+            h, w = stdscr.getmaxyx()
+            stdscr.addstr(0, 2, title, curses.A_BOLD)
+            stdscr.addstr(1, 2, "↑↓ to move  Enter to select", curses.color_pair(3) | curses.A_DIM)
+            for i, (label, subtitle, enabled) in enumerate(options):
+                y = i + 3
+                if y >= h - 1:
+                    break
+                cursor = "❯ " if i == idx else "  "
+                if i == idx:
+                    attr = curses.color_pair(1) | curses.A_BOLD
+                elif not enabled:
+                    attr = curses.color_pair(3) | curses.A_DIM
+                else:
+                    attr = curses.color_pair(2)
+                line = f"{cursor}{label:<20} {subtitle}"
+                stdscr.addstr(y, 2, line[:w-3], attr)
+            stdscr.refresh()
+            key = stdscr.getch()
+            if key in (curses.KEY_UP, ord('k')) and idx > 0:
+                idx -= 1
+            elif key in (curses.KEY_DOWN, ord('j')) and idx < len(options) - 1:
+                idx += 1
+            elif key in (curses.KEY_ENTER, ord('\n'), ord('\r')):
+                return idx
+    try:
+        return curses.wrapper(_menu, options, default)
+    except Exception:
+        # Fallback for non-interactive terminals (e.g. piped input)
+        print(f"\n  {title}")
+        for i, (label, subtitle, enabled) in enumerate(options):
+            status = "" if enabled else " (unavailable)"
+            print(f"    {i+1}. {label}{status}")
+        while True:
+            raw = input(f"  Select (default: {default+1}): ").strip()
+            if raw == "": return default
+            if raw.isdigit() and 1 <= int(raw) <= len(options):
+                return int(raw) - 1
 
 def get_local_ip():
     try:
@@ -113,35 +168,30 @@ def run_setup():
             print(f"  ⚠ {selected_model} is not yet available — using ResNet18.")
             selected_model = "resnet18"
     else:
-        print(f"\n  Model architecture:")
-        for i, (key, label, available) in enumerate(AVAILABLE_MODELS, 1):
-            status = "✓ available" if available else "coming soon"
-            print(f"    {i}. {label:<18} {status}")
-        while True:
-            raw = input(f"  Select model (default: 1): ").strip()
-            if raw == "":
-                selected_model = "resnet18"; break
-            if raw.isdigit() and 1 <= int(raw) <= len(AVAILABLE_MODELS):
-                key, label, available = AVAILABLE_MODELS[int(raw) - 1]
-                if available:
-                    selected_model = key; break
-                else:
-                    print(f"  ⚠ {label} is not yet available — please select another.")
-            else:
-                print(f"  ⚠ Enter a number between 1 and {len(AVAILABLE_MODELS)}")
+        model_options = [
+            (label, "✓ available" if available else "coming soon", available)
+            for key, label, available in AVAILABLE_MODELS
+        ]
+        chosen = arrow_select("Model Architecture", model_options, default=0)
+        key, label, available = AVAILABLE_MODELS[chosen]
+        if not available:
+            print(f"  ⚠ {label} is not yet available — using ResNet18.")
+            selected_model = "resnet18"
+        else:
+            selected_model = key
+        print(f"  Model: {label}")
 
     # Mode selection
     if args.mode:
         mode = args.mode
     else:
-        print(f"\n  Training mode:")
-        print(f"    quality — each worker trains on the full dataset (better accuracy)")
-        print(f"    split   — dataset is divided between workers (faster rounds)")
-        while True:
-            raw = input(f"  Mode (default: quality): ").strip().lower()
-            if raw == "": mode = "quality"; break
-            if raw in ("quality", "split"): mode = raw; break
-            print(f"  ⚠ Enter 'quality' or 'split'")
+        mode_options = [
+            ("Quality", "each worker trains on full dataset — better accuracy", True),
+            ("Split",   "dataset divided between workers — faster rounds",      True),
+        ]
+        chosen = arrow_select("Training Mode", mode_options, default=0)
+        mode = ["quality", "split"][chosen]
+        print(f"  Mode: {mode.capitalize()}")
 
     print()
     return dataset_dir, rounds, local_epochs, batch_size, lr, timeout, mode, selected_model
