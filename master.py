@@ -115,7 +115,7 @@ def run_setup():
     parser.add_argument("--lr",       type=float, default=None)
     parser.add_argument("--timeout",  type=int,   default=None)
     parser.add_argument("--mode",     type=str,   default=None,
-                        choices=["quality", "split"])
+                        choices=["quality", "speed"])
     parser.add_argument("--model",    type=str,   default=None,
                         choices=["resnet18", "resnet50", "efficientnet_b0", "efficientnet_b3", "vit"])
     args = parser.parse_args()
@@ -169,7 +169,7 @@ def run_setup():
             selected_model = "resnet18"
     else:
         model_options = [
-            (label, "✓ available" if available else "coming soon", available)
+            (label, "✓ available" if available else "unavailable", available)
             for key, label, available in AVAILABLE_MODELS
         ]
         chosen = arrow_select("Model Architecture", model_options, default=0)
@@ -187,10 +187,10 @@ def run_setup():
     else:
         mode_options = [
             ("Quality", "each worker trains on full dataset — better accuracy", True),
-            ("Split",   "dataset divided between workers — faster rounds",      True),
+            ("Speed",   "dataset divided between workers — faster rounds",      True),
         ]
         chosen = arrow_select("Training Mode", mode_options, default=0)
-        mode = ["quality", "split"][chosen]
+        mode = ["quality", "speed"][chosen]
         print(f"  Mode: {mode.capitalize()}")
 
     # 4. Hyperparameters
@@ -234,7 +234,7 @@ state = {
     "num_classes":        None,
     "classes":            None,
     "train_indices":      None,   # quality mode: full list sent to all workers
-    "worker_index_map":   {},     # split mode: {worker_id: [indices]}
+    "worker_index_map":   {},     # speed mode: {worker_id: [indices]}
     "worker_heartbeats":  {},     # {worker_id: last_ping_timestamp}
     "config":             {"rounds": ROUNDS},
 }
@@ -281,7 +281,7 @@ def evaluate(model, loader):
     return total_loss / n, correct / n
 
 def assign_split_indices(train_indices, worker_ids):
-    """Divide train_indices evenly across workers for split mode."""
+    """Divide train_indices evenly across workers for speed mode."""
     n = len(worker_ids)
     chunks = [train_indices[i::n] for i in range(n)]
     return {wid: chunk for wid, chunk in zip(worker_ids, chunks)}
@@ -293,8 +293,8 @@ def register(req: RegisterRequest):
     print(f"  ✓ Worker registered: {req.worker_id}  "
           f"(total: {len(state['registered_workers'])})")
 
-    # For split mode, indices are assigned after all workers connect (at training start).
-    # For now send the full list — it will be overridden for split mode once training begins.
+    # For speed mode, indices are assigned after all workers connect (at training start).
+    # For now send the full list — it will be overridden for speed mode once training begins.
     indices_for_worker = state["train_indices"] or []
 
     return {
@@ -316,7 +316,7 @@ def get_weights():
         raise HTTPException(status_code=503, detail="Weights not ready yet")
     return {"round": state["round"], "weights": state["global_weights"], "done": state["round"] > ROUNDS}
 
-# ── New endpoint: worker fetches its assigned indices for split mode ───────────
+# ── New endpoint: worker fetches its assigned indices for speed mode ───────────
 @app.get("/my_indices/{worker_id}")
 def get_my_indices(worker_id: str):
     if TRAINING_MODE == "quality":
@@ -434,9 +434,9 @@ def run_master():
     worker_ids    = sorted(state["registered_workers"])
 
     # ── Assign indices based on mode ──────────────────────────────────────────
-    if TRAINING_MODE == "split":
+    if TRAINING_MODE == "speed":
         state["worker_index_map"] = assign_split_indices(state["train_indices"], worker_ids)
-        print(f"  Split mode — dataset divided across {num_workers} worker(s):")
+        print(f"  Speed mode — dataset divided across {num_workers} worker(s):")
         for wid, idxs in state["worker_index_map"].items():
             print(f"    {wid}: {len(idxs)} images")
     else:
@@ -540,9 +540,9 @@ def run_master():
         for r in history
     )
 
-    # Build per-worker index summary for split mode
+    # Build per-worker index summary for speed mode
     split_info = ""
-    if TRAINING_MODE == "split":
+    if TRAINING_MODE == "speed":
         split_info = "\n## Data Split\n| Worker | Images |\n|--------|-------|\n"
         for wid, idxs in state["worker_index_map"].items():
             split_info += f"| {wid} | {len(idxs)} |\n"
