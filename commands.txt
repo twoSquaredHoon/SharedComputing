@@ -3,8 +3,9 @@ brew install python@3.11
 rm -rf .venv
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip3 install torch torchvision certifi requests
+pip3 install torch torchvision certifi requests psutil
 pip3 install "numpy<2"
+python3 worker.py
 
 ## Run on master
 cd SharedComputing
@@ -12,10 +13,6 @@ python3.11 -m venv ~/venv_shared
 source ~/venv_shared/bin/activate
 pip3 install torch torchvision certifi fastapi uvicorn requests
 pip3 install "numpy<2"
-python3 master.py
-
-source ~/venv_shared/bin/activate
-cd ~/Documents/2.Area/SharedComputing
 python3 master.py
 
 
