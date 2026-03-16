@@ -1,0 +1,15 @@
+.git
+.omx
+.venv
+__pycache__
+*.pyc
+SharedComputingMac
+data
+archive
+models
+runtime
+README.md
+CHANGELOG.md
+frontend-ui-ux-engineer-skill.md
+commands.txt
+summary_net.md
