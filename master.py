@@ -56,6 +56,8 @@ def run_setup():
     parser.add_argument("--timeout",  type=int,   default=None)
     parser.add_argument("--mode",     type=str,   default=None,
                         choices=["quality", "split"])
+    parser.add_argument("--model",    type=str,   default=None,
+                        choices=["resnet18", "resnet50", "efficientnet_b0", "efficientnet_b3", "vit"])
     args = parser.parse_args()
 
     # If all args provided (e.g. launched from Swift app), skip wizard
@@ -63,7 +65,7 @@ def run_setup():
         dataset_dir = Path(args.dataset)
         if not dataset_dir.is_absolute():
             dataset_dir = BASE / dataset_dir
-        return dataset_dir, args.rounds, args.epochs, args.batch, args.lr, args.timeout, args.mode
+        return dataset_dir, args.rounds, args.epochs, args.batch, args.lr, args.timeout, args.mode, args.model
 
     # Otherwise run interactive wizard for any missing values
     print(f"\n{'='*55}")
@@ -96,6 +98,38 @@ def run_setup():
     lr           = args.lr       or prompt("Learning rate",            1e-3, float)
     timeout      = args.timeout  or prompt("Round timeout (seconds)", 120,   int)
 
+    # Model selection
+    AVAILABLE_MODELS = [
+        ("resnet18",        "ResNet18",        True),
+        ("resnet50",        "ResNet50",        False),
+        ("efficientnet_b0", "EfficientNet-B0", False),
+        ("efficientnet_b3", "EfficientNet-B3", False),
+        ("vit",             "ViT",             False),
+    ]
+
+    if args.model:
+        selected_model = args.model
+        if selected_model != "resnet18":
+            print(f"  ⚠ {selected_model} is not yet available — using ResNet18.")
+            selected_model = "resnet18"
+    else:
+        print(f"\n  Model architecture:")
+        for i, (key, label, available) in enumerate(AVAILABLE_MODELS, 1):
+            status = "✓ available" if available else "coming soon"
+            print(f"    {i}. {label:<18} {status}")
+        while True:
+            raw = input(f"  Select model (default: 1): ").strip()
+            if raw == "":
+                selected_model = "resnet18"; break
+            if raw.isdigit() and 1 <= int(raw) <= len(AVAILABLE_MODELS):
+                key, label, available = AVAILABLE_MODELS[int(raw) - 1]
+                if available:
+                    selected_model = key; break
+                else:
+                    print(f"  ⚠ {label} is not yet available — please select another.")
+            else:
+                print(f"  ⚠ Enter a number between 1 and {len(AVAILABLE_MODELS)}")
+
     # Mode selection
     if args.mode:
         mode = args.mode
@@ -110,9 +144,9 @@ def run_setup():
             print(f"  ⚠ Enter 'quality' or 'split'")
 
     print()
-    return dataset_dir, rounds, local_epochs, batch_size, lr, timeout, mode
+    return dataset_dir, rounds, local_epochs, batch_size, lr, timeout, mode, selected_model
 
-DATASET_DIR, ROUNDS, LOCAL_EPOCHS, BATCH_SIZE, LR, ROUND_TIMEOUT, TRAINING_MODE = run_setup()
+DATASET_DIR, ROUNDS, LOCAL_EPOCHS, BATCH_SIZE, LR, ROUND_TIMEOUT, TRAINING_MODE, SELECTED_MODEL = run_setup()
 CKPT_PATH = CKPT_DIR / "best_model_net.pth"
 
 MASTER_DEVICE = (
@@ -143,6 +177,7 @@ state = {
     "classes":            None,
     "train_indices":      None,   # quality mode: full list sent to all workers
     "worker_index_map":   {},     # split mode: {worker_id: [indices]}
+    "worker_heartbeats":  {},     # {worker_id: last_ping_timestamp}
     "config":             {"rounds": ROUNDS},
 }
 
@@ -268,8 +303,11 @@ def receive_worker_metrics(data: dict):
     worker_id = data.get("worker_id")
     if not worker_id:
         raise HTTPException(status_code=400, detail="worker_id required")
-    data["timestamp"] = time.time()
+    now = time.time()
+    data["timestamp"] = now
     worker_metrics_store[worker_id] = data
+    # Reset heartbeat so master knows this worker is still alive
+    state["worker_heartbeats"][worker_id] = now
     return {"status": "ok"}
 
 @app.get("/workers/metrics")
@@ -318,6 +356,7 @@ def run_master():
     print(f"  NETWORK DISTRIBUTED TRAINING (MASTER)")
     print(f"{'='*55}")
     print(f"  Device        : {MASTER_DEVICE}")
+    print(f"  Model         : {SELECTED_MODEL}")
     print(f"  Mode          : {TRAINING_MODE.upper()}")
     print(f"  Classes       : {full_dataset.classes}")
     print(f"  Dataset       : {total} images  (train={n_train} val={n_val} test={n_test})")
@@ -364,14 +403,38 @@ def run_master():
         state["round_ready"].clear()
         print(f"  Round {rnd}/{ROUNDS} — waiting for {num_workers} worker(s)...")
 
-        finished = state["round_ready"].wait(timeout=ROUND_TIMEOUT)
-        if not finished:
-            received = len(state["worker_updates"])
-            print(f"  ⚠ Timeout! Only {received}/{num_workers} workers responded. "
-                  f"Aggregating with available updates...")
-            if received == 0:
-                print(f"  ✗ No updates received for round {rnd} — skipping aggregation.")
-                continue
+        # ── Heartbeat-aware wait ─────────────────────────────────────────
+        # Instead of a fixed timeout, we keep waiting as long as workers
+        # are sending heartbeats (metrics pings every 2s). We only give up
+        # if a worker goes silent for longer than ROUND_TIMEOUT seconds.
+        print(f"  Round {rnd}/{ROUNDS} — waiting (heartbeat-aware, silence timeout={ROUND_TIMEOUT}s)...")
+        while True:
+            # Check if all workers have submitted
+            if state["round_ready"].is_set():
+                break
+
+            now = time.time()
+            # Check if any active worker has gone silent
+            active_workers = [
+                wid for wid in state["registered_workers"]
+                if wid not in state["worker_updates"]
+            ]
+            silent = [
+                wid for wid in active_workers
+                if now - state["worker_heartbeats"].get(wid, now) > ROUND_TIMEOUT
+            ]
+            if silent:
+                print(f"  ⚠ Workers went silent: {silent} — proceeding with available updates.")
+                break
+
+            time.sleep(1)
+
+        received = len(state["worker_updates"])
+        if received == 0:
+            print(f"  ✗ No updates received for round {rnd} — skipping aggregation.")
+            continue
+        elif received < num_workers:
+            print(f"  ⚠ Only {received}/{num_workers} workers responded — aggregating partial results.")
 
         worker_states = [
             dict_to_state(w, reference_state)
@@ -441,7 +504,7 @@ def run_master():
 ## Hyperparameters
 | Param | Value |
 |-------|-------|
-| Architecture | ResNet18 (transfer learning, frozen backbone) |
+| Architecture | {SELECTED_MODEL} (transfer learning, frozen backbone) |
 | Training mode | {TRAINING_MODE} |
 | Image size | {IMG_SIZE}×{IMG_SIZE} |
 | Batch size | {BATCH_SIZE} |
