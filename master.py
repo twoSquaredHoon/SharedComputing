@@ -20,6 +20,10 @@ import uvicorn
 import socket
 
 # ── Arrow-key menu selector ───────────────────────────────────────────────────
+# Force a known-good TERM so curses works in Ghostty, Terminal.app, iTerm2 etc.
+if os.environ.get("TERM", "") not in ("xterm-256color", "xterm", "screen-256color"):
+    os.environ["TERM"] = "xterm-256color"
+
 def arrow_select(title, options, default=0):
     """
     options: list of (label, subtitle, enabled) tuples
@@ -28,25 +32,26 @@ def arrow_select(title, options, default=0):
     """
     def _menu(stdscr, options, default):
         curses.curs_set(0)
+        curses.use_default_colors()
         curses.start_color()
         curses.init_pair(1, curses.COLOR_CYAN,  -1)   # selected
         curses.init_pair(2, curses.COLOR_WHITE, -1)   # normal
-        curses.init_pair(3, curses.COLOR_BLACK, -1)   # disabled
+        curses.init_pair(3, 8, -1)                    # disabled (dark grey)
         idx = default
         while True:
             stdscr.clear()
             h, w = stdscr.getmaxyx()
             stdscr.addstr(0, 2, title, curses.A_BOLD)
-            stdscr.addstr(1, 2, "↑↓ to move  Enter to select", curses.color_pair(3) | curses.A_DIM)
+            stdscr.addstr(1, 2, "arrow keys to move  Enter to select", curses.A_DIM)
             for i, (label, subtitle, enabled) in enumerate(options):
                 y = i + 3
                 if y >= h - 1:
                     break
-                cursor = "❯ " if i == idx else "  "
+                cursor = "> " if i == idx else "  "
                 if i == idx:
                     attr = curses.color_pair(1) | curses.A_BOLD
                 elif not enabled:
-                    attr = curses.color_pair(3) | curses.A_DIM
+                    attr = curses.A_DIM
                 else:
                     attr = curses.color_pair(2)
                 line = f"{cursor}{label:<20} {subtitle}"
@@ -62,7 +67,7 @@ def arrow_select(title, options, default=0):
     try:
         return curses.wrapper(_menu, options, default)
     except Exception:
-        # Fallback for non-interactive terminals (e.g. piped input)
+        # Fallback for non-interactive terminals (e.g. piped input from Swift app)
         print(f"\n  {title}")
         for i, (label, subtitle, enabled) in enumerate(options):
             status = "" if enabled else " (unavailable)"
