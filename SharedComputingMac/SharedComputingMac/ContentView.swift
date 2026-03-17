@@ -985,160 +985,340 @@ struct NodeDot: View {
     }
 }
 
-// MARK: ─── Screen 4 : Results & Logs ─────────────────────────────────
+// MARK: ─── Screen 4 : Results ───────────────────────────────────────
+
+struct RunRecord: Identifiable {
+    let id: Int
+    let status: String
+    let startedAt: String
+    let finishedAt: String?
+    let modelName: String
+    let trainingMode: String
+    let rounds: Int
+    let bestValAccuracy: Double?
+    let testAccuracy: Double?
+    let totalTrainingSeconds: Double?
+    let workerCount: Int
+    let datasetImages: Int
+}
 
 struct Screen4: View {
     @Bindable var trainer: TrainerViewModel
+    @State private var runs: [RunRecord] = []
+    @State private var selectedRunId: Int? = nil
+    @State private var refreshTimer: Timer? = nil
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // Results header
-            VStack(alignment: .leading, spacing: DS.sp16) {
-                HStack {
-                    PageHeader(icon: "chart.xyaxis.line", title: "Results", sub: "Live metrics & logs", tint: DS.success)
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: DS.sp4) {
-                        TempTag()
-                        Picker("", selection: $trainer.connectionType) {
-                            Text("LAN").tag("LAN"); Text("WiFi").tag("WiFi")
-                        }
-                        .pickerStyle(.segmented).frame(width: 100)
-                    }
-                }
-
-                // DB table
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack { Label_("Database Records"); Spacer(); TempTag() }
-                    DBTable(trainer: trainer)
-                }
-                .glassCard(inset: 0)
-            }
-            .padding(DS.sp24)
-
-            // Terminal
-            TerminalPanel(trainer: trainer)
-        }
+    var selectedRun: RunRecord? {
+        runs.first { $0.id == selectedRunId }
     }
-}
-
-struct DBTable: View {
-    let trainer: TrainerViewModel
-
-    private let cols: [(String, CGFloat)] = [
-        ("Node", 80), ("Time", 60), ("Status", 70), ("Model", 80), ("Data", 50), ("Link", 50)
-    ]
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(cols, id: \.0) { col in
-                    Text(col.0.uppercased())
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.35))
-                        .frame(width: col.1, alignment: .leading)
-                }
-            }
-            .padding(.horizontal, DS.sp16).padding(.vertical, DS.sp8)
-            .background(Color.black.opacity(0.2))
-
-            if trainer.isRunning || !trainer.log.isEmpty {
-                DBRow(node: "Master", time: "—", status: trainer.isRunning ? "Live" : "Done",
-                      model: "ResNet18", data: "—", link: trainer.connectionType, isLive: trainer.isRunning)
-                ForEach(0..<max(trainer.workerCount, 1), id: \.self) { i in
-                    DBRow(node: "W\(i+1)", time: "—", status: "Compute",
-                          model: "ResNet18", data: "—", link: trainer.connectionType, isLive: true)
-                }
-            } else {
-                Text("No data yet — start a training session")
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.3))
-                    .frame(maxWidth: .infinity).padding(.vertical, DS.sp32)
-            }
-        }
-    }
-}
-
-struct DBRow: View {
-    let node, time, status, model, data, link: String
-    var isLive: Bool = false
 
     var body: some View {
         HStack(spacing: 0) {
-            Text(node).fontWeight(.medium).frame(width: 80, alignment: .leading)
-            Text(time).frame(width: 60, alignment: .leading)
-            Text(status)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(isLive ? DS.success : DS.cyan)
-                .padding(.horizontal, 6).padding(.vertical, 2)
-                .background((isLive ? DS.success : DS.cyan).opacity(0.12))
-                .clipShape(Capsule())
-                .frame(width: 70, alignment: .leading)
-            Text(model).frame(width: 80, alignment: .leading)
-            Text(data).frame(width: 50, alignment: .leading)
-            Text(link).frame(width: 50, alignment: .leading)
+            // Left — run history list
+            VStack(spacing: 0) {
+                HStack {
+                    PageHeader(icon: "chart.xyaxis.line", title: "Results", sub: "Training history", tint: DS.success)
+                    Spacer()
+                    Button {
+                        fetchRuns()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(DS.sp16)
+
+                if runs.isEmpty {
+                    VStack(spacing: DS.sp8) {
+                        Image(systemName: "tray")
+                            .font(.system(size: 28))
+                            .foregroundStyle(.white.opacity(0.15))
+                        Text("No runs yet")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        VStack(spacing: DS.sp4) {
+                            ForEach(runs) { run in
+                                RunListRow(run: run, isSelected: selectedRunId == run.id)
+                                    .onTapGesture { selectedRunId = run.id }
+                            }
+                        }
+                        .padding(DS.sp8)
+                    }
+                }
+            }
+            .frame(width: 220)
+            .background(Color(red: 0.10, green: 0.10, blue: 0.10))
+            .overlay(Rectangle().frame(width: 1).foregroundStyle(Color(red: 0.26, green: 0.26, blue: 0.26)), alignment: .trailing)
+
+            // Right — detail view
+            Group {
+                if let run = selectedRun {
+                    RunDetailView(run: run)
+                } else {
+                    VStack(spacing: DS.sp8) {
+                        Image(systemName: "arrow.left")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.white.opacity(0.15))
+                        Text("Select a run to view details")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
         }
-        .font(.system(size: 11, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.8))
-        .padding(.horizontal, DS.sp16).padding(.vertical, DS.sp8)
+        .onAppear {
+            fetchRuns()
+            // Auto-refresh while training is live
+            refreshTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+                fetchRuns()
+            }
+        }
+        .onDisappear {
+            refreshTimer?.invalidate()
+            refreshTimer = nil
+        }
+        .onChange(of: trainer.isRunning) {
+            fetchRuns()
+        }
+    }
+
+    private func fetchRuns() {
+        guard let url = URL(string: "http://localhost:8080/runs") else { return }
+        URLSession.shared.dataTask(with: URLRequest(url: url)) { data, _, _ in
+            guard let data,
+                  let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+            let parsed: [RunRecord] = arr.compactMap { d in
+                guard let id = d["id"] as? Int,
+                      let status = d["status"] as? String else { return nil }
+                return RunRecord(
+                    id: id,
+                    status: status,
+                    startedAt: (d["started_at"] as? String) ?? "—",
+                    finishedAt: d["finished_at"] as? String,
+                    modelName: (d["model_name"] as? String) ?? "—",
+                    trainingMode: (d["training_mode"] as? String) ?? "—",
+                    rounds: (d["rounds"] as? Int) ?? 0,
+                    bestValAccuracy: (d["best_val_accuracy"] as? NSNumber)?.doubleValue,
+                    testAccuracy: (d["test_accuracy"] as? NSNumber)?.doubleValue,
+                    totalTrainingSeconds: (d["total_training_seconds"] as? NSNumber)?.doubleValue,
+                    workerCount: (d["registered_worker_count"] as? Int) ?? 0,
+                    datasetImages: (d["dataset_total_images"] as? Int) ?? 0
+                )
+            }.sorted { $0.id > $1.id }
+            DispatchQueue.main.async {
+                self.runs = parsed
+                // Auto-select latest if none selected
+                if self.selectedRunId == nil, let first = parsed.first {
+                    self.selectedRunId = first.id
+                }
+            }
+        }.resume()
     }
 }
 
-// MARK: - Terminal
+struct RunListRow: View {
+    let run: RunRecord
+    let isSelected: Bool
 
-struct TerminalPanel: View {
-    @Bindable var trainer: TrainerViewModel
-    @State private var autoScroll = true
+    var statusColor: Color {
+        switch run.status {
+        case "done": return DS.success
+        case "error", "stopped": return DS.danger
+        default: return DS.amber
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: DS.sp8) {
-                HStack(spacing: DS.sp4) {
-                    Circle().fill(DS.success).frame(width: 6, height: 6)
-                    Text("Terminal").font(.system(size: 13, weight: .semibold))
-                }
-                Spacer()
-                Toggle("Auto-scroll", isOn: $autoScroll)
-                    .toggleStyle(.checkbox).font(.system(size: 11))
-                Button { trainer.log = "" } label: {
-                    Image(systemName: "trash").font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear terminal output")
+        HStack(spacing: DS.sp8) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 6, height: 6)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Run #\(run.id)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(isSelected ? 1.0 : 0.8))
+                Text(run.status.capitalized)
+                    .font(.system(size: 10))
+                    .foregroundStyle(statusColor.opacity(0.8))
             }
-            .padding(.horizontal, DS.sp16).padding(.vertical, DS.sp8)
-            .background(Color.black.opacity(0.25))
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    Text(trainer.log.isEmpty ? "Output will appear here…" : trainer.log)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(trainer.log.isEmpty ? .white.opacity(0.2) : DS.success.opacity(0.85))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(DS.sp16)
-                        .id("end")
-                }
-                .background(Color.black.opacity(0.4))
-                .onChange(of: trainer.log) {
-                    if autoScroll { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("end", anchor: .bottom) } }
-                }
-            }
-
-            if trainer.isRunning {
-                HStack(spacing: DS.sp8) {
-                    ProgressView().scaleEffect(0.5).frame(width: 12, height: 12)
-                    Text("Training…").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
-                    Spacer()
-                    if let ip = trainer.masterIP {
-                        Text("\(ip):8000")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(DS.cyan.opacity(0.7))
-                    }
-                }
-                .padding(.horizontal, DS.sp16).padding(.vertical, DS.sp8)
-                .background(Color.black.opacity(0.2))
+            Spacer()
+            if let acc = run.testAccuracy {
+                Text(String(format: "%.1f%%", acc * 100))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(DS.success)
             }
         }
-        .background(Color(red: 0.12, green: 0.12, blue: 0.12))
+        .padding(.horizontal, DS.sp12)
+        .padding(.vertical, DS.sp8)
+        .background(isSelected ? DS.cyan.opacity(0.12) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: DS.r8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.r8, style: .continuous)
+                .stroke(isSelected ? DS.cyan.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
+    }
+}
+
+struct RunDetailView: View {
+    let run: RunRecord
+
+    var statusColor: Color {
+        switch run.status {
+        case "done": return DS.success
+        case "error", "stopped": return DS.danger
+        default: return DS.amber
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DS.sp16) {
+
+                // Header
+                HStack(spacing: DS.sp12) {
+                    VStack(alignment: .leading, spacing: DS.sp4) {
+                        HStack(spacing: DS.sp8) {
+                            Text("Run #\(run.id)")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(.white)
+                            Text(run.status.uppercased())
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(statusColor)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(statusColor.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                        Text(formattedDate(run.startedAt))
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                    Spacer()
+                    // Big accuracy badge
+                    if let acc = run.testAccuracy {
+                        VStack(spacing: 2) {
+                            Text(String(format: "%.1f%%", acc * 100))
+                                .font(.system(size: 32, weight: .bold, design: .monospaced))
+                                .foregroundStyle(DS.success)
+                            Text("Test Accuracy")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                    } else if run.status != "done" {
+                        VStack(spacing: 2) {
+                            Text("—")
+                                .font(.system(size: 32, weight: .bold, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.2))
+                            Text("In Progress")
+                                .font(.system(size: 10))
+                                .foregroundStyle(DS.amber.opacity(0.7))
+                        }
+                    }
+                }
+                .glassCard()
+
+                // Accuracy metrics
+                if run.bestValAccuracy != nil || run.testAccuracy != nil {
+                    HStack(spacing: DS.sp12) {
+                        if let val = run.bestValAccuracy {
+                            MetricTile(label: "Best Val Accuracy", value: String(format: "%.1f%%", val * 100), tint: DS.cyan)
+                        }
+                        if let test = run.testAccuracy {
+                            MetricTile(label: "Test Accuracy", value: String(format: "%.1f%%", test * 100), tint: DS.success)
+                        }
+                        if let secs = run.totalTrainingSeconds {
+                            MetricTile(label: "Total Time", value: formatDuration(secs), tint: DS.purple)
+                        }
+                    }
+                }
+
+                // Config
+                VStack(alignment: .leading, spacing: DS.sp12) {
+                    Label_("Configuration")
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DS.sp8) {
+                        ConfigRow(label: "Model", value: run.modelName.uppercased())
+                        ConfigRow(label: "Mode", value: run.trainingMode.capitalized)
+                        ConfigRow(label: "Rounds", value: "\(run.rounds)")
+                        ConfigRow(label: "Workers", value: "\(run.workerCount)")
+                        ConfigRow(label: "Dataset", value: "\(run.datasetImages) images")
+                        if let secs = run.totalTrainingSeconds {
+                            ConfigRow(label: "Avg/Round", value: formatDuration(secs / Double(max(run.rounds, 1))))
+                        }
+                    }
+                }
+                .glassCard()
+            }
+            .padding(DS.sp16)
+        }
+    }
+
+    private func formattedDate(_ iso: String) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = f.date(from: iso) {
+            let out = DateFormatter()
+            out.dateStyle = .medium
+            out.timeStyle = .short
+            return out.string(from: date)
+        }
+        return iso
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let m = Int(seconds) / 60
+        let s = Int(seconds) % 60
+        return m > 0 ? "\(m)m \(s)s" : "\(s)s"
+    }
+}
+
+struct MetricTile: View {
+    let label: String
+    let value: String
+    let tint: Color
+
+    var body: some View {
+        VStack(spacing: DS.sp4) {
+            Text(value)
+                .font(.system(size: 20, weight: .bold, design: .monospaced))
+                .foregroundStyle(tint)
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.45))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(DS.sp12)
+        .background(tint.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: DS.r8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.r8, style: .continuous).stroke(tint.opacity(0.2), lineWidth: 1))
+    }
+}
+
+struct ConfigRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.45))
+            Spacer()
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
+        }
+        .padding(.horizontal, DS.sp12)
+        .padding(.vertical, DS.sp8)
+        .background(Color.white.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: DS.r8, style: .continuous))
     }
 }
 
@@ -1333,16 +1513,16 @@ final class TrainerViewModel {
                     return
                 }
                 guard let data,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let id   = json["run_id"] as? Int else {
-                    // Could be "only one active run" error
-                    if let data,
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let detail = json["detail"] as? String {
-                        self.statusMessage = "✗ \(detail)"
-                    } else {
-                        self.statusMessage = "✗ Unexpected response from backend"
-                    }
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    self.statusMessage = "✗ Unexpected response from backend"
+                    return
+                }
+                if let detail = json["detail"] as? String {
+                    self.statusMessage = "✗ \(detail)"
+                    return
+                }
+                guard let id = json["run_id"] as? Int else {
+                    self.statusMessage = "✗ No run_id in response"
                     return
                 }
                 self.runId = id
@@ -1448,8 +1628,7 @@ final class TrainerViewModel {
               let url = URL(string: "\(controlURL)/runs/\(runId)/logs") else { return }
         URLSession.shared.dataTask(with: URLRequest(url: url)) { [weak self] data, _, _ in
             guard let data,
-                  let json  = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let lines = json["logs"] as? String else { return }
+                  let lines = String(data: data, encoding: .utf8) else { return }
             DispatchQueue.main.async {
                 guard let self else { return }
                 let newChars = lines.count
