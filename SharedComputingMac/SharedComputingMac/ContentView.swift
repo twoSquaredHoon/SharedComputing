@@ -669,7 +669,7 @@ struct Screen2: View {
                 
                 // Training mode
                 VStack(alignment: .leading, spacing: DS.sp8) {
-                    Label_("Training Mode")
+                    HStack { Label_("Training Mode"); Spacer(); TempTag() }
                     Picker("Mode", selection: $trainer.selectedMode) {
                         Text("Quality").tag("quality")
                         Text("Speed").tag("speed")
