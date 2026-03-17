@@ -1,0 +1,52 @@
+HOW TO RUN — SharedComputing
+==============================
+
+1. KILL EVERYTHING FIRST
+   Open Terminal and run:
+
+   kill $(lsof -ti:8000) 2>/dev/null
+   kill $(lsof -ti:8080) 2>/dev/null
+   rm -f ~/Documents/2.Area/SharedComputing/runtime/results.db
+
+
+2. OPEN XCODE
+   Open SharedComputingMac.xcodeproj
+   Hit Cmd+R to build and run the app.
+
+
+3. CONFIGURE (Screen 1 — Setup)
+   - Set your dataset path (e.g. /Users/you/Downloads/data)
+   - Python path auto-detects from ~/venv_shared/bin/python3
+
+
+4. SET HYPERPARAMETERS (Screen 2 — Model)
+   - Leave ResNet18 selected
+   - Adjust rounds, epochs, batch size as needed
+
+
+5. START SERVER (Screen 3 — Connect)
+   - Hit Start Server
+   - Wait for status: "Ready — connect workers, then begin training."
+   - The app automatically starts backend_service.py in the background
+
+
+6. CONNECT WORKER
+   On the worker Mac (same LAN), open Terminal:
+
+   cd ~/Documents/2.Area/SharedComputing
+   source .venv/bin/activate
+   python3 worker.py
+
+   Enter the master IP shown in the app when prompted.
+   The worker node appears in the topology view.
+
+
+7. BEGIN TRAINING
+   - Once the worker shows up, hit Begin Training
+   - Switch to Screen 4 (Results) to watch the run appear
+
+
+8. VIEW RESULTS (Screen 4 — Results)
+   - Runs appear in the left sidebar as they complete
+   - Click any run to see accuracy, timing, and config details
+   - Test accuracy and best val accuracy update when the run finishes
