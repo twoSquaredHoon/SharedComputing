@@ -666,6 +666,30 @@ struct Screen2: View {
                     }
                 }
                 .glassCard()
+                
+                // Training mode
+                VStack(alignment: .leading, spacing: DS.sp8) {
+                    Label_("Training Mode")
+                    Picker("Mode", selection: $trainer.selectedMode) {
+                        Text("Quality").tag("quality")
+                        Text("Speed").tag("speed")
+                    }
+                    .pickerStyle(.radioGroup)
+
+                    HStack(spacing: DS.sp8) {
+                        Image(systemName: trainer.selectedMode == "quality" ? "sparkles" : "bolt.fill")
+                            .foregroundStyle(trainer.selectedMode == "quality" ? DS.purple : DS.amber)
+                        Text(trainer.selectedMode == "quality"
+                             ? "Each worker trains on the full dataset. Weights are averaged via FedAvg."
+                             : "Dataset is split between workers. Faster training, less overlap.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    .padding(DS.sp8)
+                    .background(Color.white.opacity(0.04))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.r8, style: .continuous))
+                }
+                .glassCard()
 
                 // Hyperparameters
                 VStack(alignment: .leading, spacing: DS.sp12) {
