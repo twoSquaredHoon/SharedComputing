@@ -1150,9 +1150,8 @@ enum ViewMode: String, CaseIterable {
 
 // MARK: - ViewModel (@Observable)
 //
-// • Automatically starts backend_service.py on init (if not already running)
-// • All training control goes through REST API on port 8080
-// • No subprocess / PTY code for training
+// Backend starts when the user hits Start Server — not before.
+// Sequence: spawn backend → wait for it → POST /runs → done.
 
 @Observable
 @MainActor
@@ -1163,33 +1162,29 @@ final class TrainerViewModel {
     var viewMode: ViewMode = .sequential
 
     // ── Training config ──────────────────────────────────────────────────
-    var datasetPath: String   = ""
-    var rounds: Int           = 15
-    var localEpochs: Int      = 2
-    var batchSize: Int        = 8
-    var lr: Double            = 0.001
-    var timeout: Int          = 120
-    var selectedModel: String = "resnet18"
-    var selectedMode: String  = "quality"   // "quality" | "speed"
+    var datasetPath: String    = ""
+    var rounds: Int            = 15
+    var localEpochs: Int       = 2
+    var batchSize: Int         = 8
+    var lr: Double             = 0.001
+    var timeout: Int           = 120
+    var selectedModel: String  = "resnet18"
+    var selectedMode: String   = "quality"
     var connectionType: String = "LAN"
 
     // ── Environment (Screen 1 UI) ────────────────────────────────────────
-    var pythonPath: String       = ""
-    var masterScriptPath: String = ""
-    var pythonVersion: String?   = nil
+    var pythonPath: String        = ""
+    var masterScriptPath: String  = ""
+    var pythonVersion: String?    = nil
     var detectedClasses: [String] = []
 
     // ── Runtime state ────────────────────────────────────────────────────
-    var log: String             = ""
-    var isRunning: Bool         = false
-    var statusMessage: String?  = nil
-    var masterIP: String?       = nil
-    var workerCount: Int        = 0
+    var log: String            = ""
+    var isRunning: Bool        = false
+    var statusMessage: String? = nil
+    var masterIP: String?      = nil
+    var workerCount: Int       = 0
     var waitingForWorkers: Bool = false
-
-    // ── Backend status ───────────────────────────────────────────────────
-    var backendReady: Bool           = false
-    var backendStatusMessage: String = "Starting backend…"
 
     // ── Telemetry ────────────────────────────────────────────────────────
     var localMetrics = SystemMetrics()
@@ -1200,7 +1195,6 @@ final class TrainerViewModel {
     @ObservationIgnored private let controlURL        = "http://localhost:8080"
     @ObservationIgnored private var pollTimer: Timer? = nil
     @ObservationIgnored private var logOffset: Int    = 0
-
     @ObservationIgnored private var backendProcess: Process? = nil
     @ObservationIgnored private let projectDir =
         NSHomeDirectory() + "/Documents/2.Area/SharedComputing"
@@ -1208,7 +1202,6 @@ final class TrainerViewModel {
     // MARK: - Init
 
     init() {
-        // Resolve Python path
         let pythonCandidates = [
             NSHomeDirectory() + "/venv_shared/bin/python3",
             NSHomeDirectory() + "/Documents/2.Area/SharedComputing/.venv/bin/python3",
@@ -1220,7 +1213,6 @@ final class TrainerViewModel {
             FileManager.default.fileExists(atPath: $0)
         } ?? "/usr/bin/python3"
 
-        // Resolve master.py path (Screen 1 display only)
         let scriptCandidates = [
             projectDir + "/master.py",
             NSHomeDirectory() + "/Documents/SharedComputing/master.py",
@@ -1230,37 +1222,42 @@ final class TrainerViewModel {
         } ?? ""
 
         masterIP = localIPAddress()
-
-        // Auto-start backend
-        launchBackendIfNeeded()
     }
 
-    // MARK: - Backend auto-launch
+    // MARK: - Start Server (user-initiated)
 
-    private func launchBackendIfNeeded() {
-        guard let url = URL(string: "\(controlURL)/runs") else { return }
-        URLSession.shared.dataTask(with: URLRequest(url: url)) { [weak self] _, response, _ in
-            DispatchQueue.main.async {
-                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                if code == 200 {
-                    self?.backendReady = true
-                    self?.backendStatusMessage = "Backend already running."
-                } else {
-                    self?.spawnBackend()
-                }
+    func start() {
+        statusMessage = "Starting…"
+        log = ""
+        logOffset = 0
+        isRunning = false
+
+        // If backend is already up, go straight to creating the run
+        checkBackendAlive { [weak self] alive in
+            if alive {
+                self?.createRun()
+            } else {
+                self?.spawnBackendThenRun()
             }
+        }
+    }
+
+    private func checkBackendAlive(completion: @escaping (Bool) -> Void) {
+        guard let url = URL(string: "\(controlURL)/runs") else { completion(false); return }
+        URLSession.shared.dataTask(with: URLRequest(url: url)) { _, response, _ in
+            let alive = (response as? HTTPURLResponse)?.statusCode == 200
+            DispatchQueue.main.async { completion(alive) }
         }.resume()
     }
 
-    private func spawnBackend() {
+    private func spawnBackendThenRun() {
         let backendScript = projectDir + "/backend_service.py"
         guard FileManager.default.fileExists(atPath: backendScript) else {
-            backendStatusMessage = "⚠ backend_service.py not found at \(projectDir)"
+            statusMessage = "✗ backend_service.py not found at \(projectDir)"
             return
         }
 
         let ip = localIPAddress() ?? "0.0.0.0"
-
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: pythonPath)
         proc.arguments = [backendScript]
@@ -1269,36 +1266,29 @@ final class TrainerViewModel {
         var env = ProcessInfo.processInfo.environment
         env["PYTHONUNBUFFERED"] = "1"
         env["ADVERTISED_HOST"]  = ip
-        if !datasetPath.isEmpty {
-            env["DATASET_ROOT"] = datasetPath
-        }
+        if !datasetPath.isEmpty { env["DATASET_ROOT"] = datasetPath }
         proc.environment = env
-
-        // Backend output goes to /dev/null — it's internal plumbing
         proc.standardOutput = FileHandle.nullDevice
         proc.standardError  = FileHandle.nullDevice
 
         proc.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.backendReady = false
-                self?.backendStatusMessage = "Backend stopped."
-            }
+            DispatchQueue.main.async { self?.isRunning = false }
         }
 
         do {
             try proc.run()
             backendProcess = proc
-            backendStatusMessage = "Backend starting…"
-            waitForBackend(attempts: 15)
+            statusMessage = "Backend starting…"
+            // Poll until backend responds, then create the run
+            waitForBackendThenRun(attempts: 20)
         } catch {
-            backendStatusMessage = "✗ Could not start backend: \(error.localizedDescription)"
+            statusMessage = "✗ Could not start backend: \(error.localizedDescription)"
         }
     }
 
-    /// Polls GET /runs once per second until the backend responds, up to `attempts` times.
-    private func waitForBackend(attempts: Int) {
+    private func waitForBackendThenRun(attempts: Int) {
         guard attempts > 0 else {
-            backendStatusMessage = "✗ Backend did not respond in time."
+            statusMessage = "✗ Backend failed to start."
             return
         }
         guard let url = URL(string: "\(controlURL)/runs") else { return }
@@ -1306,26 +1296,97 @@ final class TrainerViewModel {
             DispatchQueue.main.async {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
                 if code == 200 {
-                    self?.backendReady = true
-                    self?.backendStatusMessage = "Backend ready."
+                    self?.createRun()
                 } else {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                        self?.waitForBackend(attempts: attempts - 1)
+                        self?.waitForBackendThenRun(attempts: attempts - 1)
                     }
                 }
             }
         }.resume()
     }
 
-    /// Call after user picks a new dataset in Screen 1 so DATASET_ROOT stays in sync.
-    func restartBackendWithDataset() {
-        backendProcess?.terminate()
-        backendProcess = nil
-        backendReady = false
-        backendStatusMessage = "Restarting backend with new dataset…"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.spawnBackend()
+    private func createRun() {
+        let dataset = datasetPath.isEmpty ? "." : datasetPath
+        let body: [String: Any] = [
+            "dataset_subpath":   dataset,
+            "rounds":            rounds,
+            "local_epochs":      localEpochs,
+            "batch_size":        batchSize,
+            "learning_rate":     lr,
+            "round_timeout_sec": timeout,
+            "mode":              selectedMode,
+            "model":             selectedModel,
+        ]
+
+        guard let url = URL(string: "\(controlURL)/runs") else { return }
+        var req = URLRequest(url: url, timeoutInterval: 10)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let error {
+                    self.statusMessage = "✗ \(error.localizedDescription)"
+                    return
+                }
+                guard let data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let id   = json["run_id"] as? Int else {
+                    // Could be "only one active run" error
+                    if let data,
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let detail = json["detail"] as? String {
+                        self.statusMessage = "✗ \(detail)"
+                    } else {
+                        self.statusMessage = "✗ Unexpected response from backend"
+                    }
+                    return
+                }
+                self.runId = id
+                self.isRunning = true
+                self.workerCount = 0
+                self.statusMessage = "Ready — connect workers, then begin training."
+                self.log += "▶ Run #\(id) started\n\n"
+                self.startPolling()
+            }
+        }.resume()
+    }
+
+    // MARK: - Begin training  (POST /runs/{id}/begin)
+
+    func sendEnter() {
+        guard let runId else { return }
+        guard let url = URL(string: "\(controlURL)/runs/\(runId)/begin") else { return }
+        var req = URLRequest(url: url, timeoutInterval: 10)
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req) { [weak self] _, _, error in
+            DispatchQueue.main.async {
+                if let error { self?.statusMessage = "✗ \(error.localizedDescription)" }
+            }
+        }.resume()
+    }
+
+    // MARK: - Stop  (POST /runs/{id}/stop)
+
+    func stop() {
+        stopPolling()
+        guard let runId else {
+            isRunning = false; statusMessage = "Stopped."; return
         }
+        guard let url = URL(string: "\(controlURL)/runs/\(runId)/stop") else { return }
+        var req = URLRequest(url: url, timeoutInterval: 10)
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req) { _, _, _ in }.resume()
+
+        isRunning = false
+        self.runId = nil
+        statusMessage = "Stopped."
+        log += "\n⛔ Stopped by user.\n"
+        remoteWorkerMetrics = []
+        workerCount = 0
     }
 
     // MARK: - App quit
@@ -1334,6 +1395,94 @@ final class TrainerViewModel {
         stopPolling()
         backendProcess?.terminate()
         backendProcess = nil
+    }
+
+    // MARK: - Polling
+
+    private func startPolling() {
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.fetchWorkerMetrics()
+                self?.fetchLogs()
+                self?.fetchRunStatus()
+            }
+        }
+    }
+
+    private func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+        remoteWorkerMetrics = []
+    }
+
+    private func fetchWorkerMetrics() {
+        guard let runId,
+              let url = URL(string: "\(controlURL)/runs/\(runId)/workers") else { return }
+        URLSession.shared.dataTask(with: URLRequest(url: url)) { [weak self] data, _, _ in
+            guard let data,
+                  let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+            var metrics: [WorkerMetrics] = []
+            for dict in arr {
+                let id       = (dict["worker_id"] as? String) ?? "?"
+                let cpu      = (dict["cpu"]        as? NSNumber)?.doubleValue ?? 0
+                let ramUsed  = (dict["ram_used"]   as? NSNumber)?.doubleValue ?? 0
+                let ramTotal = (dict["ram_total"]  as? NSNumber)?.doubleValue ?? 0
+                let gpu      = (dict["gpu"]        as? NSNumber)?.doubleValue
+                let temp     = (dict["temp"]       as? NSNumber)?.doubleValue
+                let stale    = (dict["stale"]      as? Bool) ?? false
+                metrics.append(WorkerMetrics(
+                    id: id, cpu: cpu,
+                    ramUsed: ramUsed, ramTotal: ramTotal,
+                    gpu: gpu, temp: temp, stale: stale
+                ))
+            }
+            DispatchQueue.main.async {
+                self?.remoteWorkerMetrics = metrics.sorted { $0.id < $1.id }
+                self?.workerCount = metrics.filter { !$0.stale }.count
+            }
+        }.resume()
+    }
+
+    private func fetchLogs() {
+        guard let runId,
+              let url = URL(string: "\(controlURL)/runs/\(runId)/logs") else { return }
+        URLSession.shared.dataTask(with: URLRequest(url: url)) { [weak self] data, _, _ in
+            guard let data,
+                  let json  = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let lines = json["logs"] as? String else { return }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let newChars = lines.count
+                if newChars > self.logOffset {
+                    let startIndex = lines.index(lines.startIndex, offsetBy: self.logOffset)
+                    self.log += String(lines[startIndex...])
+                    self.logOffset = newChars
+                }
+            }
+        }.resume()
+    }
+
+    private func fetchRunStatus() {
+        guard let runId,
+              let url = URL(string: "\(controlURL)/runs/\(runId)") else { return }
+        URLSession.shared.dataTask(with: URLRequest(url: url)) { [weak self] data, _, _ in
+            guard let data,
+                  let json   = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let status = json["status"] as? String else { return }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if status == "done" || status == "error" || status == "stopped" {
+                    self.stopPolling()
+                    self.isRunning = false
+                    self.runId = nil
+                    let label = status == "done"
+                        ? "✅ Training finished."
+                        : "⚠ Run ended with status: \(status)."
+                    self.statusMessage = label
+                    self.log += "\n\(label)\n"
+                }
+            }
+        }.resume()
     }
 
     // MARK: - Dataset helpers
@@ -1372,184 +1521,6 @@ final class TrainerViewModel {
         } catch {
             pythonVersion = "Error: \(error.localizedDescription)"
         }
-    }
-
-    // MARK: - Start  (POST /runs)
-
-    func start() {
-        guard backendReady else {
-            statusMessage = "⚠ Backend not ready yet — please wait a moment."
-            return
-        }
-
-        let dataset = datasetPath.isEmpty ? "." : datasetPath
-        let body: [String: Any] = [
-            "dataset_subpath":   dataset,
-            "rounds":            rounds,
-            "local_epochs":      localEpochs,
-            "batch_size":        batchSize,
-            "learning_rate":     lr,
-            "round_timeout_sec": timeout,
-            "mode":              selectedMode,
-            "model":             selectedModel,
-        ]
-
-        guard let url = URL(string: "\(controlURL)/runs") else { return }
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        statusMessage = "Starting…"
-        log = ""
-        logOffset = 0
-
-        URLSession.shared.dataTask(with: req) { [weak self] data, _, error in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if let error {
-                    self.statusMessage = "✗ \(error.localizedDescription)"
-                    return
-                }
-                guard let data,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let id   = json["run_id"] as? Int else {
-                    self.statusMessage = "✗ Unexpected response from backend"
-                    return
-                }
-                self.runId = id
-                self.isRunning = true
-                self.workerCount = 0
-                self.statusMessage = "Server started (run #\(id)) — connect workers, then begin training."
-                self.log += "▶ Run #\(id) created\n\n"
-                self.startPolling()
-            }
-        }.resume()
-    }
-
-    // MARK: - Begin training  (POST /runs/{id}/begin)
-
-    func sendEnter() {
-        guard let runId else { return }
-        guard let url = URL(string: "\(controlURL)/runs/\(runId)/begin") else { return }
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.httpMethod = "POST"
-        URLSession.shared.dataTask(with: req) { [weak self] _, _, error in
-            DispatchQueue.main.async {
-                if let error { self?.statusMessage = "✗ begin: \(error.localizedDescription)" }
-            }
-        }.resume()
-    }
-
-    // MARK: - Stop  (POST /runs/{id}/stop)
-
-    func stop() {
-        stopPolling()
-        guard let runId else {
-            isRunning = false; statusMessage = "Stopped."; return
-        }
-        guard let url = URL(string: "\(controlURL)/runs/\(runId)/stop") else { return }
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.httpMethod = "POST"
-        URLSession.shared.dataTask(with: req) { _, _, _ in }.resume()
-
-        isRunning = false
-        self.runId = nil
-        statusMessage = "Stopped."
-        log += "\n⛔ Stopped by user.\n"
-        remoteWorkerMetrics = []
-        workerCount = 0
-    }
-
-    // MARK: - Polling
-
-    private func startPolling() {
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.fetchWorkerMetrics()
-                self?.fetchLogs()
-                self?.fetchRunStatus()
-            }
-        }
-    }
-
-    private func stopPolling() {
-        pollTimer?.invalidate()
-        pollTimer = nil
-        remoteWorkerMetrics = []
-    }
-
-    // GET /runs/{id}/workers
-    private func fetchWorkerMetrics() {
-        guard let runId,
-              let url = URL(string: "\(controlURL)/runs/\(runId)/workers") else { return }
-        URLSession.shared.dataTask(with: URLRequest(url: url)) { [weak self] data, _, _ in
-            guard let data,
-                  let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
-            var metrics: [WorkerMetrics] = []
-            for dict in arr {
-                let id       = (dict["worker_id"] as? String) ?? "?"
-                let cpu      = (dict["cpu"]        as? NSNumber)?.doubleValue ?? 0
-                let ramUsed  = (dict["ram_used"]   as? NSNumber)?.doubleValue ?? 0
-                let ramTotal = (dict["ram_total"]  as? NSNumber)?.doubleValue ?? 0
-                let gpu      = (dict["gpu"]        as? NSNumber)?.doubleValue
-                let temp     = (dict["temp"]       as? NSNumber)?.doubleValue
-                let stale    = (dict["stale"]      as? Bool) ?? false
-                metrics.append(WorkerMetrics(
-                    id: id, cpu: cpu,
-                    ramUsed: ramUsed, ramTotal: ramTotal,
-                    gpu: gpu, temp: temp, stale: stale
-                ))
-            }
-            DispatchQueue.main.async {
-                self?.remoteWorkerMetrics = metrics.sorted { $0.id < $1.id }
-                self?.workerCount = metrics.filter { !$0.stale }.count
-            }
-        }.resume()
-    }
-
-    // GET /runs/{id}/logs — append-only
-    private func fetchLogs() {
-        guard let runId,
-              let url = URL(string: "\(controlURL)/runs/\(runId)/logs") else { return }
-        URLSession.shared.dataTask(with: URLRequest(url: url)) { [weak self] data, _, _ in
-            guard let data,
-                  let json  = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let lines = json["logs"] as? String else { return }
-            DispatchQueue.main.async {
-                guard let self else { return }
-                let newChars = lines.count
-                if newChars > self.logOffset {
-                    let startIndex = lines.index(lines.startIndex, offsetBy: self.logOffset)
-                    self.log += String(lines[startIndex...])
-                    self.logOffset = newChars
-                }
-            }
-        }.resume()
-    }
-
-    // GET /runs/{id} — detect finish
-    private func fetchRunStatus() {
-        guard let runId,
-              let url = URL(string: "\(controlURL)/runs/\(runId)") else { return }
-        URLSession.shared.dataTask(with: URLRequest(url: url)) { [weak self] data, _, _ in
-            guard let data,
-                  let json   = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let status = json["status"] as? String else { return }
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if status == "done" || status == "error" || status == "stopped" {
-                    self.stopPolling()
-                    self.isRunning = false
-                    self.runId = nil
-                    let label = status == "done"
-                        ? "✅ Training finished."
-                        : "⚠ Run ended with status: \(status)."
-                    self.statusMessage = label
-                    self.log += "\n\(label)\n"
-                }
-            }
-        }.resume()
     }
 
     // MARK: - Local IP helper
