@@ -41,6 +41,18 @@ source ~/venv_shared/bin/activate
 cd ~/Documents/2.Area/SharedComputing
 python3 master.py
 
+DataSet problem
+cd ~/Documents/2.Area/SharedComputing
+source .venv/bin/activate
+python3 -c "
+import sqlite3
+conn = sqlite3.connect('runtime/results.db')
+conn.execute(\"UPDATE runs SET status='stopped' WHERE status NOT IN ('stopped','succeeded','error')\")
+conn.commit()
+conn.close()
+print('Done')
+"
+
 
 ### Workflow understanding
 Master (your Mac)

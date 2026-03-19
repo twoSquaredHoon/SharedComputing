@@ -810,6 +810,13 @@ struct Screen3: View {
                         .buttonStyle(WideButton(color: DS.success))
                     }
 
+                    Button { trainer.killBackend() } label: {
+                        HStack(spacing: DS.sp8) {
+                            Image(systemName: "power.dotted")
+                            Text("Kill Backend")
+                        }
+                    }
+                    .buttonStyle(WideButton(color: DS.danger.opacity(0.7)))
                     if let s = trainer.statusMessage {
                         Text(s)
                             .font(.system(size: 12))
@@ -1599,6 +1606,26 @@ final class TrainerViewModel {
         stopPolling()
         backendProcess?.terminate()
         backendProcess = nil
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/sh")
+        proc.arguments = ["-c", "lsof -ti :8080 | xargs kill -9 2>/dev/null; true"]
+        try? proc.run()
+        proc.waitUntilExit()
+    }
+    func killBackend() {
+        stopPolling()
+        isRunning = false
+        runId = nil
+        statusMessage = "Backend killed."
+        log += "\n💀 Backend killed.\n"
+        backendProcess?.terminate()
+        backendProcess = nil
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/sh")
+        proc.arguments = ["-c", "lsof -ti :8080 | xargs kill -9 2>/dev/null; true"]
+        try? proc.run()
+        proc.waitUntilExit()
     }
 
     // MARK: - Polling
