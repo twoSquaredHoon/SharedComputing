@@ -156,7 +156,7 @@ def run_setup():
     # 2. Model selection
     AVAILABLE_MODELS = [
         ("resnet18",        "ResNet18",        True),
-        ("resnet50",        "ResNet50",        False),
+        ("resnet50",        "ResNet50",        True),
         ("efficientnet_b0", "EfficientNet-B0", False),
         ("efficientnet_b3", "EfficientNet-B3", False),
         ("vit",             "ViT",             False),
@@ -164,7 +164,7 @@ def run_setup():
 
     if args.model:
         selected_model = args.model
-        if selected_model != "resnet18":
+        if selected_model not in ("resnet18", "resnet50"):
             print(f"  ⚠ {selected_model} is not yet available — using ResNet18.")
             selected_model = "resnet18"
     else:
@@ -260,8 +260,16 @@ def dict_to_state(d, reference_state=None):
         result[k] = t
     return result
 
-def build_model(num_classes):
-    model = models.resnet18(weights=None)
+def build_model(num_classes, model_name="resnet18", pretrained=False):
+    if model_name == "resnet18":
+        weights = models.ResNet18_Weights.DEFAULT if pretrained else None
+        model = models.resnet18(weights=weights)
+    elif model_name == "resnet50":
+        weights = models.ResNet50_Weights.DEFAULT if pretrained else None
+        model = models.resnet50(weights=weights)
+    else:
+        raise ValueError(f"Unsupported model: {model_name}")
+
     for param in model.parameters():
         param.requires_grad = False
     model.fc = nn.Linear(model.fc.in_features, num_classes)
@@ -307,6 +315,7 @@ def register(req: RegisterRequest):
         "img_size":      IMG_SIZE,
         "lr":            LR,
         "mode":          TRAINING_MODE,
+        "model":         SELECTED_MODEL,
         "train_indices": indices_for_worker,
     }
 
@@ -404,10 +413,7 @@ def run_master():
     test_loader  = DataLoader(Subset(eval_dataset, list(test_set.indices)),
                               batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
-    global_model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-    for param in global_model.parameters():
-        param.requires_grad = False
-    global_model.fc = nn.Linear(global_model.fc.in_features, num_classes)
+    global_model = build_model(num_classes, model_name=SELECTED_MODEL, pretrained=True)
     global_model    = global_model.to(MASTER_DEVICE)
 
     print(f"\n{'='*55}")

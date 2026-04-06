@@ -641,6 +641,7 @@ struct Screen2: View {
 
     private let modelOptions: [ModelOption] = [
         ModelOption(id: "resnet18", label: "ResNet18"),
+        ModelOption(id: "resnet50", label: "ResNet50"),
         ModelOption(id: "resnet34", label: "ResNet34 (soon)"),
         ModelOption(id: "vgg16", label: "VGG16 (soon)"),
         ModelOption(id: "mobilenetv2", label: "MobileNetV2 (soon)"),
@@ -658,42 +659,68 @@ struct Screen2: View {
                 VStack(alignment: .leading, spacing: DS.sp8) {
                     HStack { Label_("Architecture"); Spacer(); TempTag() }
                     ForEach(modelOptions) { option in
-                        Button {
-                            trainer.selectedModel = option.id
-                        } label: {
-                            HStack(spacing: DS.sp8) {
-                                Image(systemName: trainer.selectedModel == option.id ? "largecircle.fill.circle" : "circle.fill")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(trainer.selectedModel == option.id ? DS.cyan : .white.opacity(0.15))
+                        HStack(spacing: DS.sp8) {
+                            Image(systemName: trainer.selectedModel == option.id ? "largecircle.fill.circle" : "circle.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(trainer.selectedModel == option.id ? DS.cyan : .white.opacity(0.15))
 
-                                Text(option.label)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.85))
+                            Text(option.label)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.85))
 
-                                Spacer()
+                            Spacer()
 
-                                let installed = trainer.isModelInstalled(option.id)
-                                Text(installed ? "Available" : "Uninstalled")
+                            let installed = trainer.isModelInstalled(option.id)
+                            if installed {
+                                Text("Available")
                                     .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(installed ? DS.success : DS.danger.opacity(0.95))
+                                    .foregroundStyle(DS.success)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background((installed ? DS.success : DS.danger).opacity(0.15))
+                                    .background(DS.success.opacity(0.15))
                                     .clipShape(Capsule())
+                            } else {
+                                HStack(spacing: DS.sp8) {
+                                    Text("Uninstalled")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(DS.danger.opacity(0.95))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(DS.danger.opacity(0.15))
+                                        .clipShape(Capsule())
+
+                                    if trainer.canInstallModel(option.id) {
+                                        Button {
+                                            trainer.installModelWeights(option.id)
+                                        } label: {
+                                            Text(trainer.installLabel(option.id))
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(DS.cyan.opacity(0.9))
+                                                .clipShape(Capsule())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .disabled(trainer.installingModels.contains(option.id))
+                                    }
+                                }
                             }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            trainer.selectedModel = option.id
+                        }
                     }
 
                     Text("Checked in: \(trainer.modelInstallRootPath) and ~/.cache/torch/hub/checkpoints")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.35))
 
-                    if trainer.selectedModel != "resnet18" {
+                    if trainer.selectedModel != "resnet18" && trainer.selectedModel != "resnet50" {
                         HStack(spacing: DS.sp8) {
                             Image(systemName: "info.circle.fill").foregroundStyle(DS.amber)
-                            Text("Only ResNet18 is currently supported.")
+                            Text("Only ResNet18 and ResNet50 are currently supported.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.7))
                         }
@@ -1433,6 +1460,8 @@ final class TrainerViewModel {
     var masterIP: String?      = nil
     var workerCount: Int       = 0
     var waitingForWorkers: Bool = false
+    var installingModels: Set<String> = []
+    var modelInstallProgress: [String: Double] = [:]
 
     // ── Telemetry ────────────────────────────────────────────────────────
     var localMetrics = SystemMetrics()
@@ -1444,8 +1473,7 @@ final class TrainerViewModel {
     @ObservationIgnored private var pollTimer: Timer? = nil
     @ObservationIgnored private var logOffset: Int    = 0
     @ObservationIgnored private var backendProcess: Process? = nil
-    @ObservationIgnored private let projectDir =
-        NSHomeDirectory() + "/Documents/2.Area/SharedComputing"
+    @ObservationIgnored private var projectDir: String = ""
 
     var modelInstallRootPath: String {
         repositoryRootPath + "/models/pretrained"
@@ -1454,9 +1482,19 @@ final class TrainerViewModel {
     // MARK: - Init
 
     init() {
+        let projectCandidates = [
+            NSHomeDirectory() + "/Documents/projects/SharedComputing",
+            NSHomeDirectory() + "/Documents/2.Area/SharedComputing",
+            NSHomeDirectory() + "/Documents/SharedComputing",
+        ]
+        projectDir = projectCandidates.first {
+            FileManager.default.fileExists(atPath: $0 + "/master.py")
+        } ?? (NSHomeDirectory() + "/Documents/projects/SharedComputing")
+
         let pythonCandidates = [
             NSHomeDirectory() + "/venv_shared/bin/python3",
-            NSHomeDirectory() + "/Documents/2.Area/SharedComputing/.venv/bin/python3",
+            projectDir + "/.venv/bin/python3",
+            projectDir + "/.venv-1/bin/python3",
             NSHomeDirectory() + "/.venv/bin/python3",
             "/usr/local/bin/python3",
             "/usr/bin/python3",
@@ -1467,6 +1505,8 @@ final class TrainerViewModel {
 
         let scriptCandidates = [
             projectDir + "/master.py",
+            NSHomeDirectory() + "/Documents/projects/SharedComputing/master.py",
+            NSHomeDirectory() + "/Documents/2.Area/SharedComputing/master.py",
             NSHomeDirectory() + "/Documents/SharedComputing/master.py",
         ]
         masterScriptPath = scriptCandidates.first {
@@ -1837,6 +1877,17 @@ final class TrainerViewModel {
         return projectDir
     }
 
+    func canInstallModel(_ modelId: String) -> Bool {
+        modelId == "resnet18" || modelId == "resnet50"
+    }
+
+    func installLabel(_ modelId: String) -> String {
+        if let pct = modelInstallProgress[modelId], installingModels.contains(modelId) {
+            return "Installing \(Int(pct))%"
+        }
+        return "Install"
+    }
+
     private func weightCandidates(for modelId: String) -> [String] {
         switch modelId {
         case "resnet18":
@@ -1871,5 +1922,112 @@ final class TrainerViewModel {
             }
         }
         return false
+    }
+
+    func installModelWeights(_ modelId: String) {
+        guard canInstallModel(modelId) else {
+            statusMessage = "⚠ Install not supported yet for \(modelId)."
+            return
+        }
+        guard !installingModels.contains(modelId) else { return }
+        installingModels.insert(modelId)
+        statusMessage = "Installing \(modelId) weights..."
+        modelInstallProgress[modelId] = 0
+
+        guard let url = URL(string: "\(controlURL)/models/install/\(modelId)") else {
+            installingModels.remove(modelId)
+            statusMessage = "✗ Invalid install endpoint URL"
+            return
+        }
+
+        var req = URLRequest(url: url, timeoutInterval: 600)
+        req.httpMethod = "POST"
+
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let error {
+                    self.installingModels.remove(modelId)
+                    self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.statusMessage = "✗ Install failed: \(error.localizedDescription)"
+                    return
+                }
+
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard statusCode == 200, let data else {
+                    self.installingModels.remove(modelId)
+                    self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.statusMessage = "✗ Install failed (HTTP \(statusCode))"
+                    return
+                }
+
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let detail = json["detail"] as? String {
+                    self.installingModels.remove(modelId)
+                    self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.statusMessage = "✗ Install failed: \(detail)"
+                    return
+                }
+
+                self.pollModelInstallStatus(modelId)
+            }
+        }.resume()
+    }
+
+    private func pollModelInstallStatus(_ modelId: String) {
+        guard installingModels.contains(modelId) else { return }
+        guard let url = URL(string: "\(controlURL)/models/install/\(modelId)") else {
+            installingModels.remove(modelId)
+            modelInstallProgress.removeValue(forKey: modelId)
+            statusMessage = "✗ Invalid install status endpoint URL"
+            return
+        }
+
+        URLSession.shared.dataTask(with: URLRequest(url: url, timeoutInterval: 30)) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard self.installingModels.contains(modelId) else { return }
+
+                if let error {
+                    self.installingModels.remove(modelId)
+                    self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.statusMessage = "✗ Install status error: \(error.localizedDescription)"
+                    return
+                }
+
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard statusCode == 200, let data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    self.installingModels.remove(modelId)
+                    self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.statusMessage = "✗ Install status failed (HTTP \(statusCode))"
+                    return
+                }
+
+                let status = (json["status"] as? String) ?? "idle"
+                let progress = (json["progress"] as? NSNumber)?.doubleValue ?? 0
+                self.modelInstallProgress[modelId] = progress
+
+                if status == "installed" {
+                    self.modelInstallProgress[modelId] = 100
+                    self.installingModels.remove(modelId)
+                    self.statusMessage = "✓ \(modelId) installed"
+                    return
+                }
+
+                if status == "failed" {
+                    self.installingModels.remove(modelId)
+                    let err = (json["error"] as? String) ?? "unknown error"
+                    self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.statusMessage = "✗ Install failed: \(err)"
+                    return
+                }
+
+                self.statusMessage = "Installing \(modelId)... \(Int(progress))%"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    self.pollModelInstallStatus(modelId)
+                }
+            }
+        }.resume()
     }
 }

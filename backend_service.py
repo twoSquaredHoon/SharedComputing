@@ -5,6 +5,7 @@ import os
 import pty
 import shutil
 import sqlite3
+import ssl
 import subprocess
 import sys
 import threading
@@ -14,6 +15,11 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+
+import certifi
+
+os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+ssl._create_default_https_context = ssl.create_default_context
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
@@ -47,11 +53,27 @@ RUNTIME_ROOT = RESULTS_DB.parent
 LOG_ROOT = RUNTIME_ROOT / "logs"
 SUMMARY_ROOT = RUNTIME_ROOT / "summaries"
 MODEL_ARCHIVE_ROOT = RUNTIME_ROOT / "models"
+PRETRAINED_MODEL_ROOT = REPO_ROOT / "models" / "pretrained"
+TORCH_CACHE_DIR = Path.home() / ".cache" / "torch" / "hub" / "checkpoints"
 MASTER_PORT = 8000
 CONTROL_PORT = int(os.environ.get("CONTROL_PORT", "8080"))
 POLL_INTERVAL_SECONDS = 2.0
 
-for path in (RUNTIME_ROOT, LOG_ROOT, SUMMARY_ROOT, MODEL_ARCHIVE_ROOT):
+MODEL_INSTALL_CATALOG: dict[str, dict[str, str]] = {
+    "resnet18": {
+        "filename": "resnet18-f37072fd.pth",
+        "url": "https://download.pytorch.org/models/resnet18-f37072fd.pth",
+    },
+    "resnet50": {
+        "filename": "resnet50-11ad3fa6.pth",
+        "url": "https://download.pytorch.org/models/resnet50-11ad3fa6.pth",
+    },
+}
+
+_MODEL_INSTALL_LOCK = threading.Lock()
+_MODEL_INSTALL_STATE: dict[str, dict[str, Any]] = {}
+
+for path in (RUNTIME_ROOT, LOG_ROOT, SUMMARY_ROOT, MODEL_ARCHIVE_ROOT, PRETRAINED_MODEL_ROOT, TORCH_CACHE_DIR):
     path.mkdir(parents=True, exist_ok=True)
 
 
@@ -591,6 +613,122 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
+def _new_install_state(model_name: str) -> dict[str, Any]:
+    return {
+        "model": model_name,
+        "status": "idle",
+        "progress": 0.0,
+        "error": None,
+        "path": None,
+    }
+
+
+def _set_install_state(model_name: str, **fields: Any) -> dict[str, Any]:
+    with _MODEL_INSTALL_LOCK:
+        state = _MODEL_INSTALL_STATE.get(model_name)
+        if state is None:
+            state = _new_install_state(model_name)
+            _MODEL_INSTALL_STATE[model_name] = state
+        state.update(fields)
+        return dict(state)
+
+
+def _get_install_state(model_name: str) -> dict[str, Any]:
+    with _MODEL_INSTALL_LOCK:
+        state = _MODEL_INSTALL_STATE.get(model_name)
+        if state is None:
+            state = _new_install_state(model_name)
+            _MODEL_INSTALL_STATE[model_name] = state
+        return dict(state)
+
+
+def _weight_candidates(model_name: str) -> list[str]:
+    entry = MODEL_INSTALL_CATALOG.get(model_name)
+    if not entry:
+        return [f"{model_name}.pth"]
+    primary = entry["filename"]
+    alt = f"{model_name}.pth"
+    return [primary, alt] if primary != alt else [primary]
+
+
+def _find_installed_path(model_name: str) -> str | None:
+    for filename in _weight_candidates(model_name):
+        local = PRETRAINED_MODEL_ROOT / filename
+        if local.exists():
+            return str(local)
+        cache = TORCH_CACHE_DIR / filename
+        if cache.exists():
+            return str(cache)
+    return None
+
+
+def _copy_if_missing(src: Path, dst: Path) -> None:
+    if src.exists() and not dst.exists():
+        shutil.copy2(src, dst)
+
+
+def _download_model_with_progress(model_name: str) -> None:
+    entry = MODEL_INSTALL_CATALOG[model_name]
+    filename = entry["filename"]
+    url = entry["url"]
+    cache_path = TORCH_CACHE_DIR / filename
+    local_path = PRETRAINED_MODEL_ROOT / filename
+    tmp_path = TORCH_CACHE_DIR / f".{filename}.part"
+
+    try:
+        if cache_path.exists() or local_path.exists():
+            _copy_if_missing(cache_path, local_path)
+            _copy_if_missing(local_path, cache_path)
+            installed_path = str(local_path if local_path.exists() else cache_path)
+            _set_install_state(model_name, status="installed", progress=100.0, path=installed_path, error=None)
+            return
+
+        _set_install_state(model_name, status="downloading", progress=0.0, error=None, path=None)
+
+        downloaded = 0
+        total = 0
+        with urllib.request.urlopen(url, timeout=30) as response:
+            content_len = response.headers.get("Content-Length")
+            if content_len and content_len.isdigit():
+                total = int(content_len)
+
+            with tmp_path.open("wb") as out:
+                while True:
+                    chunk = response.read(1024 * 256)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    downloaded += len(chunk)
+                    if total > 0:
+                        pct = min(99.0, (downloaded * 100.0) / total)
+                        _set_install_state(model_name, status="downloading", progress=round(pct, 1))
+
+        tmp_path.replace(cache_path)
+        shutil.copy2(cache_path, local_path)
+        _set_install_state(model_name, status="installed", progress=100.0, path=str(local_path), error=None)
+    except Exception as exc:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        _set_install_state(model_name, status="failed", error=str(exc))
+
+
+def _start_model_install(model_name: str) -> dict[str, Any]:
+    existing = _find_installed_path(model_name)
+    if existing:
+        return _set_install_state(model_name, status="installed", progress=100.0, path=existing, error=None)
+
+    state = _get_install_state(model_name)
+    if state["status"] == "downloading":
+        return state
+
+    _set_install_state(model_name, status="downloading", progress=0.0, error=None, path=None)
+    threading.Thread(target=_download_model_with_progress, args=(model_name,), daemon=True).start()
+    return _get_install_state(model_name)
+
+
 app = FastAPI(title="SharedComputing Backend Wrapper")
 store = SQLiteStore(RESULTS_DB)
 manager = RunManager(store)
@@ -607,6 +745,26 @@ def health() -> dict[str, Any]:
         "master_port": MASTER_PORT,
         "control_port": CONTROL_PORT,
     }
+
+
+@app.post("/models/install/{model_name}")
+def install_model(model_name: str) -> dict[str, Any]:
+    model = model_name.lower().strip()
+    if model not in MODEL_INSTALL_CATALOG:
+        raise HTTPException(status_code=400, detail=f"Unsupported install target: {model}")
+    return _start_model_install(model)
+
+
+@app.get("/models/install/{model_name}")
+def get_model_install_status(model_name: str) -> dict[str, Any]:
+    model = model_name.lower().strip()
+    if model not in MODEL_INSTALL_CATALOG:
+        raise HTTPException(status_code=400, detail=f"Unsupported install target: {model}")
+
+    existing = _find_installed_path(model)
+    if existing:
+        return _set_install_state(model, status="installed", progress=100.0, path=existing, error=None)
+    return _get_install_state(model)
 
 
 @app.post("/runs")

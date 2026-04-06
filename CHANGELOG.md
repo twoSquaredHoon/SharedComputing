@@ -2,6 +2,21 @@
 
 All notable changes to SharedComputing will be documented in this file.
 
+## [2026-04-06] — ResNet50 Install Pipeline & UX
+
+### Added
+- Added end-to-end `ResNet50` support for LAN training path (UI selection -> backend/master config -> worker model construction).
+- Added in-app install flow for supported architectures (`ResNet18`, `ResNet50`) from Screen 2.
+
+### Changed
+- Updated architecture availability messaging so `ResNet18` and `ResNet50` are treated as supported models.
+- Upgraded model installer pipeline to async + progress-tracked status (`GET /models/install/{model}` returns status/progress/error/path).
+- Added install progress labels in the UI (e.g., `Installing 37%`) and polling until completion/failure.
+
+### Fixed
+- Fixed local repo path detection in the macOS app so model-install checks resolve correctly in common workspace locations.
+- Fixed installer SSL certificate handling in backend downloads using `certifi` so weight downloads complete reliably.
+
 ## [2026-04-06] — Screen 3 Telemetry Pipeline Fix
 
 ### Changed

@@ -33,8 +33,14 @@ DEVICE = (
     "cpu"
 )
 
-def build_model(num_classes):
-    model = models.resnet18(weights=None)
+def build_model(num_classes, model_name="resnet18"):
+    if model_name == "resnet18":
+        model = models.resnet18(weights=None)
+    elif model_name == "resnet50":
+        model = models.resnet50(weights=None)
+    else:
+        raise ValueError(f"Unsupported model: {model_name}")
+
     for param in model.parameters():
         param.requires_grad = False
     model.fc = nn.Linear(model.fc.in_features, num_classes)
@@ -157,9 +163,11 @@ def main():
     img_size      = config["img_size"]
     lr            = config["lr"]
     mode          = config.get("mode", "quality")
+    selected_model = config.get("model", "resnet18")
     train_indices = config["train_indices"]
 
     print(f"  ✓ Registered — {num_classes} classes: {classes}")
+    print(f"  Model: {selected_model}")
     print(f"  Mode: {mode.upper()}")
     print(f"  Rounds: {rounds}  |  Local epochs: {local_epochs}")
 
@@ -177,7 +185,7 @@ def main():
     threading.Thread(target=metrics_reporter, args=(MASTER_URL, WORKER_ID), daemon=True).start()
 
     train_loader = get_train_loader(train_indices, batch_size, img_size)
-    model        = build_model(num_classes).to(DEVICE)
+    model        = build_model(num_classes, model_name=selected_model).to(DEVICE)
     criterion    = nn.CrossEntropyLoss()
     reference_state = model.state_dict()
 
