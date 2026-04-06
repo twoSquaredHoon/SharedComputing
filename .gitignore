@@ -35,6 +35,9 @@ __pycache__/
 # AI Skills
 .skills/
 
+# Local screenshots/images
+image/
+
 # Docker backend runtime
 runtime/
 .env

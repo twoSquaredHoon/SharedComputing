@@ -634,6 +634,18 @@ struct Screen1: View {
 struct Screen2: View {
     @Bindable var trainer: TrainerViewModel
 
+    private struct ModelOption: Identifiable {
+        let id: String
+        let label: String
+    }
+
+    private let modelOptions: [ModelOption] = [
+        ModelOption(id: "resnet18", label: "ResNet18"),
+        ModelOption(id: "resnet34", label: "ResNet34 (soon)"),
+        ModelOption(id: "vgg16", label: "VGG16 (soon)"),
+        ModelOption(id: "mobilenetv2", label: "MobileNetV2 (soon)"),
+    ]
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.sp24) {
@@ -645,13 +657,38 @@ struct Screen2: View {
                 // Model selector
                 VStack(alignment: .leading, spacing: DS.sp8) {
                     HStack { Label_("Architecture"); Spacer(); TempTag() }
-                    Picker("Architecture", selection: $trainer.selectedModel) {
-                        Text("ResNet18").tag("resnet18")
-                        Text("ResNet34 (soon)").tag("resnet34")
-                        Text("VGG16 (soon)").tag("vgg16")
-                        Text("MobileNetV2 (soon)").tag("mobilenetv2")
+                    ForEach(modelOptions) { option in
+                        Button {
+                            trainer.selectedModel = option.id
+                        } label: {
+                            HStack(spacing: DS.sp8) {
+                                Image(systemName: trainer.selectedModel == option.id ? "largecircle.fill.circle" : "circle.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(trainer.selectedModel == option.id ? DS.cyan : .white.opacity(0.15))
+
+                                Text(option.label)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.85))
+
+                                Spacer()
+
+                                let installed = trainer.isModelInstalled(option.id)
+                                Text(installed ? "Available" : "Uninstalled")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(installed ? DS.success : DS.danger.opacity(0.95))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background((installed ? DS.success : DS.danger).opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .pickerStyle(.radioGroup)
+
+                    Text("Checked in: \(trainer.modelInstallRootPath) and ~/.cache/torch/hub/checkpoints")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.35))
 
                     if trainer.selectedModel != "resnet18" {
                         HStack(spacing: DS.sp8) {
@@ -1410,6 +1447,10 @@ final class TrainerViewModel {
     @ObservationIgnored private let projectDir =
         NSHomeDirectory() + "/Documents/2.Area/SharedComputing"
 
+    var modelInstallRootPath: String {
+        repositoryRootPath + "/models/pretrained"
+    }
+
     // MARK: - Init
 
     init() {
@@ -1787,5 +1828,48 @@ final class TrainerViewModel {
             ptr = interface.pointee.ifa_next
         }
         return address
+    }
+
+    private var repositoryRootPath: String {
+        if !masterScriptPath.isEmpty {
+            return URL(fileURLWithPath: masterScriptPath).deletingLastPathComponent().path
+        }
+        return projectDir
+    }
+
+    private func weightCandidates(for modelId: String) -> [String] {
+        switch modelId {
+        case "resnet18":
+            return ["resnet18-f37072fd.pth", "resnet18.pth"]
+        case "resnet34":
+            return ["resnet34-b627a593.pth", "resnet34.pth"]
+        case "resnet50":
+            return ["resnet50-11ad3fa6.pth", "resnet50.pth"]
+        case "vgg16":
+            return ["vgg16-397923af.pth", "vgg16.pth"]
+        case "mobilenetv2":
+            return ["mobilenet_v2-7ebf99e0.pth", "mobilenetv2.pth"]
+        default:
+            return ["\(modelId).pth"]
+        }
+    }
+
+    func isModelInstalled(_ modelId: String) -> Bool {
+        let fm = FileManager.default
+        let projectInstallDir = modelInstallRootPath
+        let torchCacheDir = NSHomeDirectory() + "/.cache/torch/hub/checkpoints"
+
+        for filename in weightCandidates(for: modelId) {
+            let localPath = projectInstallDir + "/" + filename
+            if fm.fileExists(atPath: localPath) {
+                return true
+            }
+
+            let cachePath = torchCacheDir + "/" + filename
+            if fm.fileExists(atPath: cachePath) {
+                return true
+            }
+        }
+        return false
     }
 }
