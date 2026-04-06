@@ -103,9 +103,15 @@ def collect_metrics():
             if entries:
                 cpu_temp = entries[0].current
                 break
+    # Prefer an Activity-Monitor-like estimate when fields are available.
+    # Fallback to psutil's used value on platforms that don't expose them.
+    ram_used_bytes = getattr(mem, "used", 0)
+    if all(hasattr(mem, attr) for attr in ("wired", "active", "compressed")):
+        ram_used_bytes = mem.wired + mem.active + mem.compressed
+
     return {
         "cpu": cpu,
-        "ram_used": round(mem.used / (1024**3), 2),
+        "ram_used": round(ram_used_bytes / (1024**3), 2),
         "ram_total": round(mem.total / (1024**3), 2),
         "gpu": None,
         "temp": cpu_temp,

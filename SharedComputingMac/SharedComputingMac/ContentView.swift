@@ -1160,8 +1160,8 @@ struct RunListRow: View {
 
     var statusColor: Color {
         switch run.status {
-        case "done": return DS.success
-        case "error", "stopped": return DS.danger
+        case "succeeded", "done": return DS.success
+        case "failed", "error", "stopped": return DS.danger
         default: return DS.amber
         }
     }
@@ -1202,8 +1202,8 @@ struct RunDetailView: View {
 
     var statusColor: Color {
         switch run.status {
-        case "done": return DS.success
-        case "error", "stopped": return DS.danger
+        case "succeeded", "done": return DS.success
+        case "failed", "error", "stopped": return DS.danger
         default: return DS.amber
         }
     }
@@ -1655,12 +1655,21 @@ final class TrainerViewModel {
             var metrics: [WorkerMetrics] = []
             for dict in arr {
                 let id       = (dict["worker_id"] as? String) ?? "?"
-                let cpu      = (dict["cpu"]        as? NSNumber)?.doubleValue ?? 0
-                let ramUsed  = (dict["ram_used"]   as? NSNumber)?.doubleValue ?? 0
-                let ramTotal = (dict["ram_total"]  as? NSNumber)?.doubleValue ?? 0
-                let gpu      = (dict["gpu"]        as? NSNumber)?.doubleValue
-                let temp     = (dict["temp"]       as? NSNumber)?.doubleValue
-                let stale    = (dict["stale"]      as? Bool) ?? false
+                let cpu      = (dict["last_cpu_pct"]      as? NSNumber)?.doubleValue
+                    ?? (dict["cpu"] as? NSNumber)?.doubleValue
+                    ?? 0
+                let ramUsed  = (dict["last_ram_used_gb"]  as? NSNumber)?.doubleValue
+                    ?? (dict["ram_used"] as? NSNumber)?.doubleValue
+                    ?? 0
+                let ramTotal = (dict["ram_total_gb"]      as? NSNumber)?.doubleValue
+                    ?? (dict["ram_total"] as? NSNumber)?.doubleValue
+                    ?? 0
+                let gpu      = (dict["last_gpu_pct"]      as? NSNumber)?.doubleValue
+                    ?? (dict["gpu"] as? NSNumber)?.doubleValue
+                let temp     = (dict["last_temp_c"]       as? NSNumber)?.doubleValue
+                    ?? (dict["temp"] as? NSNumber)?.doubleValue
+                let stale    = ((dict["state"] as? String) == "stale")
+                    || ((dict["stale"] as? Bool) ?? false)
                 metrics.append(WorkerMetrics(
                     id: id, cpu: cpu,
                     ramUsed: ramUsed, ramTotal: ramTotal,
@@ -1701,11 +1710,12 @@ final class TrainerViewModel {
                   let status = json["status"] as? String else { return }
             DispatchQueue.main.async {
                 guard let self else { return }
-                if status == "done" || status == "error" || status == "stopped" {
+                if status == "succeeded" || status == "failed" || status == "stopped"
+                    || status == "done" || status == "error" {
                     self.stopPolling()
                     self.isRunning = false
                     self.runId = nil
-                    let label = status == "done"
+                    let label = (status == "succeeded" || status == "done")
                         ? "✅ Training finished."
                         : "⚠ Run ended with status: \(status)."
                     self.statusMessage = label

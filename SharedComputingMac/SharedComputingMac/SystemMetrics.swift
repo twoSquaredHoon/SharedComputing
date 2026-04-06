@@ -111,7 +111,15 @@ final class SystemMetrics {
             return (0, Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824)
         }
         let pageSize = Double(vm_kernel_page_size)
-        let used = Double(stats.active_count + stats.wire_count) * pageSize
+
+        // Approximate Activity Monitor's "Memory Used" style number.
+        // App memory ~= internal - purgeable, then add wired + compressed.
+        let appPages = max(Int64(stats.internal_page_count) - Int64(stats.purgeable_count), 0)
+        let usedPages = UInt64(appPages)
+            + UInt64(stats.wire_count)
+            + UInt64(stats.compressor_page_count)
+
+        let used = Double(usedPages) * pageSize
         let total = Double(ProcessInfo.processInfo.physicalMemory)
         return (used / 1_073_741_824, total / 1_073_741_824)
     }

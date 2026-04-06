@@ -2,6 +2,18 @@
 
 All notable changes to SharedComputing will be documented in this file.
 
+## [2026-04-06] — Screen 3 Telemetry Pipeline Fix
+
+### Changed
+- Fixed Screen 3 worker telemetry parsing to match backend worker fields (`last_cpu_pct`, `last_ram_used_gb`, `ram_total_gb`, `last_gpu_pct`, `last_temp_c`) with fallback compatibility for older keys.
+- Updated local RAM usage calculation in the macOS app to an Activity-Monitor-like estimate (`internal - purgeable + wired + compressed`) for more intuitive values.
+- Updated run-status handling in the UI to support backend statuses (`succeeded`, `failed`, `stopped`) while keeping compatibility with legacy labels.
+- Updated `worker.py` metrics collection so RAM sent to the master/backend prefers an Activity-Monitor-like value (`wired + active + compressed`) when available, with automatic fallback to `psutil`'s `used` value on unsupported platforms.
+
+### Notes
+- This resolves misleading RAM/telemetry values on the Connect page caused by key mismatches and differing memory accounting semantics.
+- `worker.py` still reports GPU as `None` (N/A in UI) because no stable cross-platform GPU percentage API is currently wired for workers.
+
 ## [2025-03-11] — 4-Screen UI Restructuring
 
 ### Added
