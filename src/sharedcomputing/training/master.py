@@ -119,7 +119,7 @@ def run_setup():
     parser.add_argument("--mode",     type=str,   default=None,
                         choices=["quality", "speed"])
     parser.add_argument("--model",    type=str,   default=None,
-                        choices=["resnet18", "resnet50", "efficientnet_b0", "efficientnet_b3", "vit"])
+                        choices=["resnet18", "resnet34", "resnet50", "vgg16", "mobilenetv2"])
     args = parser.parse_args()
 
     # If all args provided (e.g. launched from Swift app), skip wizard
@@ -157,18 +157,15 @@ def run_setup():
 
     # 2. Model selection
     AVAILABLE_MODELS = [
-        ("resnet18",        "ResNet18",        True),
-        ("resnet50",        "ResNet50",        True),
-        ("efficientnet_b0", "EfficientNet-B0", False),
-        ("efficientnet_b3", "EfficientNet-B3", False),
-        ("vit",             "ViT",             False),
+        ("resnet18",     "ResNet18",     True),
+        ("resnet34",     "ResNet34",     True),
+        ("resnet50",     "ResNet50",     True),
+        ("vgg16",        "VGG16",        True),
+        ("mobilenetv2",  "MobileNetV2",  True),
     ]
 
     if args.model:
         selected_model = args.model
-        if selected_model not in ("resnet18", "resnet50"):
-            print(f"  ⚠ {selected_model} is not yet available — using ResNet18.")
-            selected_model = "resnet18"
     else:
         model_options = [
             (label, "✓ available" if available else "unavailable", available)
@@ -266,9 +263,26 @@ def build_model(num_classes, model_name="resnet18", pretrained=False):
     if model_name == "resnet18":
         weights = models.ResNet18_Weights.DEFAULT if pretrained else None
         model = models.resnet18(weights=weights)
+    elif model_name == "resnet34":
+        weights = models.ResNet34_Weights.DEFAULT if pretrained else None
+        model = models.resnet34(weights=weights)
     elif model_name == "resnet50":
         weights = models.ResNet50_Weights.DEFAULT if pretrained else None
         model = models.resnet50(weights=weights)
+    elif model_name == "vgg16":
+        weights = models.VGG16_Weights.DEFAULT if pretrained else None
+        model = models.vgg16(weights=weights)
+        for param in model.parameters():
+            param.requires_grad = False
+        model.classifier[6] = nn.Linear(model.classifier[6].in_features, num_classes)
+        return model
+    elif model_name == "mobilenetv2":
+        weights = models.MobileNet_V2_Weights.DEFAULT if pretrained else None
+        model = models.mobilenet_v2(weights=weights)
+        for param in model.parameters():
+            param.requires_grad = False
+        model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+        return model
     else:
         raise ValueError(f"Unsupported model: {model_name}")
 

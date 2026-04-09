@@ -726,10 +726,10 @@ struct Screen2: View {
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.35))
 
-                    if trainer.selectedModel != "resnet18" && trainer.selectedModel != "resnet50" {
+                    if !trainer.canInstallModel(trainer.selectedModel) {
                         HStack(spacing: DS.sp8) {
                             Image(systemName: "info.circle.fill").foregroundStyle(DS.amber)
-                            Text("Only ResNet18 and ResNet50 are currently supported for training.")
+                            Text("This model is not yet supported for training.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.7))
                         }
@@ -1919,7 +1919,7 @@ final class TrainerViewModel {
     }
 
     func canInstallModel(_ modelId: String) -> Bool {
-        modelId == "resnet18" || modelId == "resnet34" || modelId == "resnet50"
+        ["resnet18", "resnet34", "resnet50", "vgg16", "mobilenetv2"].contains(modelId)
     }
 
     func installLabel(_ modelId: String) -> String {

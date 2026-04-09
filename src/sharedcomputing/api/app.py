@@ -75,6 +75,14 @@ MODEL_INSTALL_CATALOG: dict[str, dict[str, str]] = {
         "filename": "resnet50-11ad3fa6.pth",
         "url": "https://download.pytorch.org/models/resnet50-11ad3fa6.pth",
     },
+    "vgg16": {
+        "filename": "vgg16-397923af.pth",
+        "url": "https://download.pytorch.org/models/vgg16-397923af.pth",
+    },
+    "mobilenetv2": {
+        "filename": "mobilenet_v2-7ebf99e0.pth",
+        "url": "https://download.pytorch.org/models/mobilenet_v2-7ebf99e0.pth",
+    },
 }
 
 MODEL_DOWNLOAD_TIMEOUT_SECONDS = 180
@@ -97,7 +105,7 @@ class CreateRunRequest(BaseModel):
     connection_type: Literal["LAN", "WiFi"] = "LAN"
     # ── New fields for mode and model selection ────────────────────────────────
     mode: Literal["quality", "speed"] = "quality"
-    model: Literal["resnet18", "resnet50", "efficientnet_b0", "efficientnet_b3", "vit"] = "resnet18"
+    model: Literal["resnet18", "resnet34", "resnet50", "vgg16", "mobilenetv2"] = "resnet18"
 
 
 @dataclass
