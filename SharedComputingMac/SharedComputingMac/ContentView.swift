@@ -642,9 +642,9 @@ struct Screen2: View {
     private let modelOptions: [ModelOption] = [
         ModelOption(id: "resnet18", label: "ResNet18"),
         ModelOption(id: "resnet50", label: "ResNet50"),
-        ModelOption(id: "resnet34", label: "ResNet34 (soon)"),
-        ModelOption(id: "vgg16", label: "VGG16 (soon)"),
-        ModelOption(id: "mobilenetv2", label: "MobileNetV2 (soon)"),
+        ModelOption(id: "resnet34", label: "ResNet34"),
+        ModelOption(id: "vgg16", label: "VGG16"),
+        ModelOption(id: "mobilenetv2", label: "MobileNetV2"),
     ]
 
     var body: some View {
@@ -659,57 +659,66 @@ struct Screen2: View {
                 VStack(alignment: .leading, spacing: DS.sp8) {
                     HStack { Label_("Architecture"); Spacer(); TempTag() }
                     ForEach(modelOptions) { option in
-                        HStack(spacing: DS.sp8) {
-                            Image(systemName: trainer.selectedModel == option.id ? "largecircle.fill.circle" : "circle.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(trainer.selectedModel == option.id ? DS.cyan : .white.opacity(0.15))
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: DS.sp8) {
+                                Image(systemName: trainer.selectedModel == option.id ? "largecircle.fill.circle" : "circle.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(trainer.selectedModel == option.id ? DS.cyan : .white.opacity(0.15))
 
-                            Text(option.label)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.85))
+                                Text(option.label)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.85))
 
-                            Spacer()
+                                Spacer()
 
-                            let installed = trainer.isModelInstalled(option.id)
-                            if installed {
-                                Text("Available")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(DS.success)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(DS.success.opacity(0.15))
-                                    .clipShape(Capsule())
-                            } else {
-                                HStack(spacing: DS.sp8) {
-                                    Text("Uninstalled")
+                                let installed = trainer.isModelInstalled(option.id)
+                                if installed {
+                                    Text("Available")
                                         .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(DS.danger.opacity(0.95))
+                                        .foregroundStyle(DS.success)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
-                                        .background(DS.danger.opacity(0.15))
+                                        .background(DS.success.opacity(0.15))
                                         .clipShape(Capsule())
+                                } else {
+                                    HStack(spacing: DS.sp8) {
+                                        Text("Uninstalled")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundStyle(DS.danger.opacity(0.95))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(DS.danger.opacity(0.15))
+                                            .clipShape(Capsule())
 
-                                    if trainer.canInstallModel(option.id) {
-                                        Button {
-                                            trainer.installModelWeights(option.id)
-                                        } label: {
-                                            Text(trainer.installLabel(option.id))
-                                                .font(.system(size: 10, weight: .bold))
-                                                .foregroundStyle(.white)
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(DS.cyan.opacity(0.9))
-                                                .clipShape(Capsule())
+                                        if trainer.canInstallModel(option.id) {
+                                            Button {
+                                                trainer.installModelWeights(option.id)
+                                            } label: {
+                                                Text(trainer.installLabel(option.id))
+                                                    .font(.system(size: 10, weight: .bold))
+                                                    .foregroundStyle(.white)
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 4)
+                                                    .background(DS.cyan.opacity(0.9))
+                                                    .clipShape(Capsule())
+                                            }
+                                            .buttonStyle(.plain)
+                                            .disabled(trainer.installingModels.contains(option.id))
                                         }
-                                        .buttonStyle(.plain)
-                                        .disabled(trainer.installingModels.contains(option.id))
                                     }
                                 }
                             }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            trainer.selectedModel = option.id
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                trainer.selectedModel = option.id
+                            }
+
+                            if let err = trainer.modelInstallErrors[option.id], !err.isEmpty {
+                                Text("Install error: \(err)")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(DS.danger.opacity(0.8))
+                                    .lineLimit(2)
+                            }
                         }
                     }
 
@@ -720,7 +729,7 @@ struct Screen2: View {
                     if trainer.selectedModel != "resnet18" && trainer.selectedModel != "resnet50" {
                         HStack(spacing: DS.sp8) {
                             Image(systemName: "info.circle.fill").foregroundStyle(DS.amber)
-                            Text("Only ResNet18 and ResNet50 are currently supported.")
+                            Text("Only ResNet18 and ResNet50 are currently supported for training.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.7))
                         }
@@ -1462,6 +1471,7 @@ final class TrainerViewModel {
     var waitingForWorkers: Bool = false
     var installingModels: Set<String> = []
     var modelInstallProgress: [String: Double] = [:]
+    var modelInstallErrors: [String: String] = [:]
 
     // ── Telemetry ────────────────────────────────────────────────────────
     var localMetrics = SystemMetrics()
@@ -1487,8 +1497,10 @@ final class TrainerViewModel {
             NSHomeDirectory() + "/Documents/2.Area/SharedComputing",
             NSHomeDirectory() + "/Documents/SharedComputing",
         ]
-        projectDir = projectCandidates.first {
-            FileManager.default.fileExists(atPath: $0 + "/master.py")
+        projectDir = projectCandidates.first { root in
+            FileManager.default.fileExists(atPath: root + "/master.py")
+                || FileManager.default.fileExists(atPath: root + "/backend_service.py")
+                || FileManager.default.fileExists(atPath: root + "/src/sharedcomputing")
         } ?? (NSHomeDirectory() + "/Documents/projects/SharedComputing")
 
         let pythonCandidates = [
@@ -1499,12 +1511,16 @@ final class TrainerViewModel {
             "/usr/local/bin/python3",
             "/usr/bin/python3",
         ]
-        pythonPath = pythonCandidates.first {
+        let existingPythonCandidates = pythonCandidates.filter {
             FileManager.default.fileExists(atPath: $0)
-        } ?? "/usr/bin/python3"
+        }
+        pythonPath = existingPythonCandidates.first(where: supportsBackendPackages)
+            ?? existingPythonCandidates.first
+            ?? "/usr/bin/python3"
 
         let scriptCandidates = [
             projectDir + "/master.py",
+            projectDir + "/src/sharedcomputing/training/master.py",
             NSHomeDirectory() + "/Documents/projects/SharedComputing/master.py",
             NSHomeDirectory() + "/Documents/2.Area/SharedComputing/master.py",
             NSHomeDirectory() + "/Documents/SharedComputing/master.py",
@@ -1535,7 +1551,7 @@ final class TrainerViewModel {
     }
 
     private func checkBackendAlive(completion: @escaping (Bool) -> Void) {
-        guard let url = URL(string: "\(controlURL)/runs") else { completion(false); return }
+        guard let url = URL(string: "\(controlURL)/health") else { completion(false); return }
         URLSession.shared.dataTask(with: URLRequest(url: url)) { _, response, _ in
             let alive = (response as? HTTPURLResponse)?.statusCode == 200
             DispatchQueue.main.async { completion(alive) }
@@ -1543,9 +1559,10 @@ final class TrainerViewModel {
     }
 
     private func spawnBackendThenRun() {
-        let backendScript = projectDir + "/backend_service.py"
+        let repoRoot = repositoryRootPath
+        let backendScript = repoRoot + "/backend_service.py"
         guard FileManager.default.fileExists(atPath: backendScript) else {
-            statusMessage = "✗ backend_service.py not found at \(projectDir)"
+            statusMessage = "✗ backend_service.py not found at \(repoRoot)"
             return
         }
 
@@ -1553,12 +1570,12 @@ final class TrainerViewModel {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: pythonPath)
         proc.arguments = [backendScript]
-        proc.currentDirectoryURL = URL(fileURLWithPath: projectDir)
+        proc.currentDirectoryURL = URL(fileURLWithPath: repoRoot)
 
         var env = ProcessInfo.processInfo.environment
         env["PYTHONUNBUFFERED"] = "1"
         env["ADVERTISED_HOST"]  = ip
-        if !datasetPath.isEmpty { env["DATASET_ROOT"] = datasetPath }
+        env["DATASET_ROOT"] = datasetPath.isEmpty ? (repoRoot + "/data") : datasetPath
         proc.environment = env
         proc.standardOutput = FileHandle.nullDevice
         proc.standardError  = FileHandle.nullDevice
@@ -1583,19 +1600,16 @@ final class TrainerViewModel {
             statusMessage = "✗ Backend failed to start."
             return
         }
-        guard let url = URL(string: "\(controlURL)/runs") else { return }
-        URLSession.shared.dataTask(with: URLRequest(url: url)) { [weak self] _, response, _ in
-            DispatchQueue.main.async {
-                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                if code == 200 {
-                    self?.createRun()
-                } else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                        self?.waitForBackendThenRun(attempts: attempts - 1)
-                    }
+        checkBackendAlive { [weak self] alive in
+            guard let self else { return }
+            if alive {
+                self.createRun()
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    self.waitForBackendThenRun(attempts: attempts - 1)
                 }
             }
-        }.resume()
+        }
     }
 
     private func createRun() {
@@ -1870,20 +1884,50 @@ final class TrainerViewModel {
         return address
     }
 
+    /// Repo root for `data/`, `models/`, and `backend_service.py` (not necessarily the master file's directory).
     private var repositoryRootPath: String {
-        if !masterScriptPath.isEmpty {
-            return URL(fileURLWithPath: masterScriptPath).deletingLastPathComponent().path
+        if masterScriptPath.isEmpty {
+            return projectDir
         }
-        return projectDir
+        var url = URL(fileURLWithPath: masterScriptPath).deletingLastPathComponent()
+        for _ in 0..<8 {
+            let srcPkg = url.appendingPathComponent("src/sharedcomputing")
+            let backend = url.appendingPathComponent("backend_service.py")
+            if FileManager.default.fileExists(atPath: srcPkg.path)
+                || FileManager.default.fileExists(atPath: backend.path) {
+                return url.path
+            }
+            if url.path == "/" || url.path.isEmpty { break }
+            url.deleteLastPathComponent()
+        }
+        return URL(fileURLWithPath: masterScriptPath).deletingLastPathComponent().path
+    }
+
+    private func supportsBackendPackages(_ pythonExecutable: String) -> Bool {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: pythonExecutable)
+        proc.arguments = ["-c", "import fastapi, pydantic, uvicorn, certifi"]
+        proc.standardOutput = Pipe()
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            return proc.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
 
     func canInstallModel(_ modelId: String) -> Bool {
-        modelId == "resnet18" || modelId == "resnet50"
+        modelId == "resnet18" || modelId == "resnet34" || modelId == "resnet50"
     }
 
     func installLabel(_ modelId: String) -> String {
         if let pct = modelInstallProgress[modelId], installingModels.contains(modelId) {
             return "Installing \(Int(pct))%"
+        }
+        if modelInstallErrors[modelId] != nil {
+            return "Retry"
         }
         return "Install"
     }
@@ -1933,12 +1977,90 @@ final class TrainerViewModel {
         installingModels.insert(modelId)
         statusMessage = "Installing \(modelId) weights..."
         modelInstallProgress[modelId] = 0
+        modelInstallErrors.removeValue(forKey: modelId)
 
         guard let url = URL(string: "\(controlURL)/models/install/\(modelId)") else {
             installingModels.remove(modelId)
+            modelInstallErrors[modelId] = "Invalid install endpoint URL"
             statusMessage = "✗ Invalid install endpoint URL"
             return
         }
+
+        checkBackendAlive { [weak self] alive in
+            guard let self else { return }
+            if alive {
+                self.requestModelInstall(modelId, url: url)
+            } else {
+                self.spawnBackendForInstall(modelId: modelId, url: url)
+            }
+        }
+    }
+
+    private func spawnBackendForInstall(modelId: String, url: URL) {
+        let repoRoot = repositoryRootPath
+        let backendScript = repoRoot + "/backend_service.py"
+        guard FileManager.default.fileExists(atPath: backendScript) else {
+            installingModels.remove(modelId)
+            modelInstallProgress.removeValue(forKey: modelId)
+            modelInstallErrors[modelId] = "backend_service.py not found"
+            statusMessage = "✗ backend_service.py not found at \(repoRoot)"
+            return
+        }
+
+        let ip = localIPAddress() ?? "0.0.0.0"
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: pythonPath)
+        proc.arguments = [backendScript]
+        proc.currentDirectoryURL = URL(fileURLWithPath: repoRoot)
+
+        var env = ProcessInfo.processInfo.environment
+        env["PYTHONUNBUFFERED"] = "1"
+        env["ADVERTISED_HOST"]  = ip
+        env["DATASET_ROOT"] = datasetPath.isEmpty ? (repoRoot + "/data") : datasetPath
+        proc.environment = env
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError  = FileHandle.nullDevice
+
+        proc.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async { self?.isRunning = false }
+        }
+
+        do {
+            try proc.run()
+            backendProcess = proc
+            statusMessage = "Backend starting for model install..."
+            waitForBackendThenInstall(attempts: 20, modelId: modelId, url: url)
+        } catch {
+            installingModels.remove(modelId)
+            modelInstallProgress.removeValue(forKey: modelId)
+            modelInstallErrors[modelId] = error.localizedDescription
+            statusMessage = "✗ Could not start backend: \(error.localizedDescription)"
+        }
+    }
+
+    private func waitForBackendThenInstall(attempts: Int, modelId: String, url: URL) {
+        guard attempts > 0 else {
+            installingModels.remove(modelId)
+            modelInstallProgress.removeValue(forKey: modelId)
+            let err = "Backend failed to start for install (python: \(pythonPath))"
+            modelInstallErrors[modelId] = err
+            statusMessage = "✗ \(err)"
+            return
+        }
+
+        checkBackendAlive { [weak self] alive in
+            guard let self else { return }
+            if alive {
+                self.requestModelInstall(modelId, url: url)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    self.waitForBackendThenInstall(attempts: attempts - 1, modelId: modelId, url: url)
+                }
+            }
+        }
+    }
+
+    private func requestModelInstall(_ modelId: String, url: URL) {
 
         var req = URLRequest(url: url, timeoutInterval: 600)
         req.httpMethod = "POST"
@@ -1949,6 +2071,7 @@ final class TrainerViewModel {
                 if let error {
                     self.installingModels.remove(modelId)
                     self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.modelInstallErrors[modelId] = error.localizedDescription
                     self.statusMessage = "✗ Install failed: \(error.localizedDescription)"
                     return
                 }
@@ -1957,6 +2080,7 @@ final class TrainerViewModel {
                 guard statusCode == 200, let data else {
                     self.installingModels.remove(modelId)
                     self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.modelInstallErrors[modelId] = "HTTP \(statusCode)"
                     self.statusMessage = "✗ Install failed (HTTP \(statusCode))"
                     return
                 }
@@ -1965,6 +2089,7 @@ final class TrainerViewModel {
                    let detail = json["detail"] as? String {
                     self.installingModels.remove(modelId)
                     self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.modelInstallErrors[modelId] = detail
                     self.statusMessage = "✗ Install failed: \(detail)"
                     return
                 }
@@ -1979,6 +2104,7 @@ final class TrainerViewModel {
         guard let url = URL(string: "\(controlURL)/models/install/\(modelId)") else {
             installingModels.remove(modelId)
             modelInstallProgress.removeValue(forKey: modelId)
+            modelInstallErrors[modelId] = "Invalid install status endpoint URL"
             statusMessage = "✗ Invalid install status endpoint URL"
             return
         }
@@ -1991,6 +2117,7 @@ final class TrainerViewModel {
                 if let error {
                     self.installingModels.remove(modelId)
                     self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.modelInstallErrors[modelId] = error.localizedDescription
                     self.statusMessage = "✗ Install status error: \(error.localizedDescription)"
                     return
                 }
@@ -2000,6 +2127,7 @@ final class TrainerViewModel {
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                     self.installingModels.remove(modelId)
                     self.modelInstallProgress.removeValue(forKey: modelId)
+                                        self.modelInstallErrors[modelId] = "HTTP \(statusCode)"
                     self.statusMessage = "✗ Install status failed (HTTP \(statusCode))"
                     return
                 }
@@ -2011,6 +2139,7 @@ final class TrainerViewModel {
                 if status == "installed" {
                     self.modelInstallProgress[modelId] = 100
                     self.installingModels.remove(modelId)
+                    self.modelInstallErrors.removeValue(forKey: modelId)
                     self.statusMessage = "✓ \(modelId) installed"
                     return
                 }
@@ -2019,6 +2148,7 @@ final class TrainerViewModel {
                     self.installingModels.remove(modelId)
                     let err = (json["error"] as? String) ?? "unknown error"
                     self.modelInstallProgress.removeValue(forKey: modelId)
+                    self.modelInstallErrors[modelId] = err
                     self.statusMessage = "✗ Install failed: \(err)"
                     return
                 }

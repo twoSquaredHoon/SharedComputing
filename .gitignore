@@ -46,3 +46,4 @@ image/
 # Docker backend runtime
 runtime/
 .env
+*.egg-info/

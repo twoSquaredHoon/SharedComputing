@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend_helpers import (
+from sharedcomputing.utils.backend_helpers import (
     compute_split_counts,
     count_dataset_images,
     parse_summary_text,

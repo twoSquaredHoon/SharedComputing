@@ -7,15 +7,23 @@ All notable changes to SharedComputing will be documented in this file.
 ### Added
 - Added end-to-end `ResNet50` support for LAN training path (UI selection -> backend/master config -> worker model construction).
 - Added in-app install flow for supported architectures (`ResNet18`, `ResNet50`) from Screen 2.
+- Extended the same in-app install pipeline to support `ResNet34` downloads.
 
 ### Changed
 - Updated architecture availability messaging so `ResNet18` and `ResNet50` are treated as supported models.
 - Upgraded model installer pipeline to async + progress-tracked status (`GET /models/install/{model}` returns status/progress/error/path).
 - Added install progress labels in the UI (e.g., `Installing 37%`) and polling until completion/failure.
+- Removed `(soon)` suffixes from architecture labels now that install availability is shown directly in UI.
 
 ### Fixed
 - Fixed local repo path detection in the macOS app so model-install checks resolve correctly in common workspace locations.
 - Fixed installer SSL certificate handling in backend downloads using `certifi` so weight downloads complete reliably.
+- Fixed install-button bounce behavior by auto-starting backend for install requests when backend is not already running.
+- Backend no longer requires `DATASET_ROOT` at startup for model-install endpoints (still required when creating training runs).
+- Increased installer network timeout and added download retries to avoid premature failures around 30 seconds.
+- Added inline per-model install error details in Screen 2 and `Retry` button labeling for failed installs.
+- Backend health checks now use `/health` for readiness gating before install/run requests.
+- App now prefers Python interpreters that can import backend dependencies (`fastapi`, `pydantic`, `uvicorn`, `certifi`) when spawning backend.
 
 ## [2026-04-06] — Screen 3 Telemetry Pipeline Fix
 
