@@ -1590,14 +1590,15 @@ final class TrainerViewModel {
         log = ""
         logOffset = 0
         isRunning = false
-
-        // If backend is already up, go straight to creating the run
-        checkBackendAlive { [weak self] alive in
-            if alive {
-                self?.createRun()
-            } else {
-                self?.spawnBackendThenRun()
-            }
+        let killProc = Process()
+        killProc.executableURL = URL(fileURLWithPath: "/bin/sh")
+        killProc.arguments = ["-c", "lsof -ti :8080 | xargs kill -9 2>/dev/null; lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]
+        try? killProc.run()
+        killProc.waitUntilExit()
+        backendProcess?.terminate()
+        backendProcess = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.spawnBackendThenRun()
         }
     }
 
@@ -1611,6 +1612,7 @@ final class TrainerViewModel {
 
     private func spawnBackendThenRun() {
         let repoRoot = repositoryRootPath
+        try? FileManager.default.removeItem(atPath: repoRoot + "/runtime/results.db")
         let backendScript = repoRoot + "/backend_service.py"
         guard FileManager.default.fileExists(atPath: backendScript) else {
             statusMessage = "✗ backend_service.py not found at \(repoRoot)"

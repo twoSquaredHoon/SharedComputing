@@ -1,77 +1,108 @@
-# Docker Backend Wrapper
+# Backend Startup Guide
 
-This setup adds a backend-only wrapper around `master.py` without changing the training code.
+## How to Start the Backend
 
-## What it does
+### Prerequisites
+- Docker Desktop must be running (open from Applications, wait for whale icon to stop animating)
+- A `.env` file must exist in the project root (see below)
 
-- Runs `master.py` inside a container and keeps port `8000` available for external workers.
-- Exposes a control API on port `8080`.
-- Stores run results in `SQLite` at `./runtime/results.db`.
-- Saves per-run logs, summary snapshots, and archived checkpoints under `./runtime/`.
+### 1. Create the `.env` file (one-time setup)
 
-## Required environment
+Create a file called `.env` in the project root (`SharedComputing/.env`):
 
-Create a local `.env` file:
-
-```env
-ADVERTISED_HOST=192.168.1.20
-DATASET_ROOT_HOST=/absolute/path/to/your/dataset/root
+```
+ADVERTISED_HOST=<your Mac's LAN IP>
+DATASET_ROOT_HOST=<absolute path to your data/ folder>
 ```
 
-- `ADVERTISED_HOST` must be the LAN IP that worker machines can reach.
-- `DATASET_ROOT_HOST` is mounted read-only to `/datasets` inside the container.
+Example:
+```
+ADVERTISED_HOST=10.141.134.14
+DATASET_ROOT_HOST=/Users/seunghoon/Documents/2.Area/SharedComputing/data
+```
 
-## Start the backend
+To find your current LAN IP:
+```bash
+ifconfig | grep "inet " | grep -v 127.0.0.1
+```
+
+> **Note:** `ADVERTISED_HOST` is the IP that workers on other machines use to reach the backend.
+> If your IP changes (e.g. after reconnecting to WiFi), update this value and restart.
+
+### 2. Start the backend
 
 ```bash
-docker compose up --build
+docker compose up
 ```
 
-The backend API will be available at `http://localhost:8080`.
+The backend is ready when you see:
+```
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080
+```
 
-## Run flow
-
-1. Create a run:
+### 3. Stop the backend
 
 ```bash
-curl -X POST http://localhost:8080/runs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "dataset_subpath": ".",
-    "rounds": 5,
-    "local_epochs": 1,
-    "batch_size": 8,
-    "learning_rate": 0.001,
-    "round_timeout_sec": 60,
-    "connection_type": "LAN"
-  }'
+docker compose down
 ```
 
-2. Start workers on other machines and point them to `ADVERTISED_HOST:8000`.
-3. After at least one worker registers, begin training:
+Or press `Ctrl+C` in the terminal where it's running.
 
+---
+
+## Ports
+
+| Port | Purpose |
+|------|---------|
+| 8080 | Control API (workers register here, Mac app polls here) |
+| 8000 | Exposed but unused by default |
+
+---
+
+## Known Failure Modes & Fixes
+
+### ❌ `required variable ADVERTISED_HOST is missing a value`
+**Cause:** `.env` file doesn't exist or is missing `ADVERTISED_HOST`.
+**Fix:** Create `.env` in the project root with `ADVERTISED_HOST=<your LAN IP>` and `DATASET_ROOT_HOST=<path to data>`.
+
+### ❌ `failed to connect to the docker API` / `docker.sock: no such file or directory`
+**Cause:** Docker Desktop is not running.
+**Fix:** Open Docker Desktop from Applications and wait for it to fully start.
+
+### ❌ `RuntimeError: ADVERTISED_HOST must be set` (when running without Docker)
+**Cause:** Running `python3 backend_service.py` without the env var exported.
+**Fix:** Use Docker instead, or export the variable first:
 ```bash
-curl -X POST http://localhost:8080/runs/1/begin
+export ADVERTISED_HOST=10.141.134.14
+python3 backend_service.py
 ```
 
-4. Inspect run status:
-
+### ❌ `ModuleNotFoundError: No module named 'fastapi'` (when running without Docker)
+**Cause:** Dependencies not installed in the active Python environment.
+**Fix:** Use Docker instead (it handles all dependencies), or activate the venv:
 ```bash
-curl http://localhost:8080/runs/1
-curl http://localhost:8080/runs/1/workers
-curl http://localhost:8080/runs/1/logs
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-backend.txt
+```
+Note: `source .venv/bin/activate` must be run every time you open a new terminal.
+
+### ❌ Port already in use
+**Cause:** A previous backend process didn't shut down cleanly.
+**Fix:** Find and kill the process:
+```bash
+lsof -i :8080
+kill -9 <PID>
 ```
 
-## Stored artifacts
+---
 
-- Database: `./runtime/results.db`
-- Logs: `./runtime/logs/run-<id>.log`
-- Summary snapshots: `./runtime/summaries/run-<id>.md`
-- Archived checkpoints: `./runtime/models/run-<id>-best_model_net.pth`
+## Architecture Notes
 
-## Current limitations
-
-- Only one active run is supported at a time.
-- The backend does not store high-frequency telemetry history; it keeps only the latest worker snapshot.
-- Detailed hardware specs are limited to what the existing worker metrics endpoint already reports.
-- The Swift macOS app is not integrated with this backend yet.
+- The backend is a FastAPI app (`src/sharedcomputing/api/app.py`) served by uvicorn
+- `backend_service.py` in the project root is a compatibility shim — prefer Docker
+- `ADVERTISED_HOST` is broadcast to workers so they know where to send results
+- `DATASET_ROOT_HOST` maps your local data folder into the container at `/datasets`
+- Runtime outputs (logs, models, results.db) are written to `./runtime/` on the host via Docker volume mount
+- The `.env` file is gitignored — each machine needs its own copy
