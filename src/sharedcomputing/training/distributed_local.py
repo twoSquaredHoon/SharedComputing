@@ -76,7 +76,7 @@ def worker_fn(worker_id, dataset_dir, indices, num_classes, task_queue, result_q
         if msg == "done":
             break
         model.load_state_dict(msg)
-        optimizer = optim.Adam(model.fc.parameters(), lr=LR)
+        optimizer = optim.Adam([p for p in model.parameters() if p.requires_grad], lr=LR)
         model.train()
         for _ in range(LOCAL_EPOCHS):
             for imgs, labels in local_loader:

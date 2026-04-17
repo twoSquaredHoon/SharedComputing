@@ -2,6 +2,17 @@
 
 All notable changes to SharedComputing will be documented in this file.
 
+## [2026-04-09] — VGG16 & MobileNetV2 Support
+
+### Added
+- Added **VGG16** and **MobileNetV2** to the model install catalog with full download, progress tracking, and install flow.
+- Added `build_model` implementations for **ResNet34**, **VGG16** (`classifier[6]` head), and **MobileNetV2** (`classifier[1]` head).
+
+### Changed
+- Replaced placeholder model choices (`EfficientNet-B0/B3`, `ViT`) with the five actually supported architectures: `ResNet18`, `ResNet34`, `ResNet50`, `VGG16`, `MobileNetV2`.
+- `canInstallModel` in the macOS app now covers all five models; all show an Install button when weights are missing.
+- `CreateRunRequest.model` and master argparse choices updated to match the new set.
+
 ## [2026-04-06] — ResNet50 Install Pipeline & UX
 
 ### Added

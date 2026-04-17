@@ -117,7 +117,7 @@ def train():
     model    = model.to(DEVICE)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.fc.parameters(), lr=LR)
+    optimizer = optim.Adam([p for p in model.parameters() if p.requires_grad], lr=LR)
 
     CKPT_DIR.mkdir(exist_ok=True)  # creates models/ if it doesn't exist
     best_val_acc = 0.0

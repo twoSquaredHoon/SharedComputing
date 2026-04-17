@@ -38,8 +38,22 @@ DEVICE = (
 def build_model(num_classes, model_name="resnet18"):
     if model_name == "resnet18":
         model = models.resnet18(weights=None)
+    elif model_name == "resnet34":
+        model = models.resnet34(weights=None)
     elif model_name == "resnet50":
         model = models.resnet50(weights=None)
+    elif model_name == "vgg16":
+        model = models.vgg16(weights=None)
+        for param in model.parameters():
+            param.requires_grad = False
+        model.classifier[6] = nn.Linear(model.classifier[6].in_features, num_classes)
+        return model
+    elif model_name == "mobilenetv2":
+        model = models.mobilenet_v2(weights=None)
+        for param in model.parameters():
+            param.requires_grad = False
+        model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+        return model
     else:
         raise ValueError(f"Unsupported model: {model_name}")
 
@@ -211,7 +225,8 @@ def main():
             time.sleep(1)
 
         model.load_state_dict(dict_to_state(weights_resp["weights"], reference_state))
-        optimizer = optim.Adam(model.fc.parameters(), lr=lr)
+        trainable = [p for p in model.parameters() if p.requires_grad]
+        optimizer = optim.Adam(trainable, lr=lr)
 
         t0 = time.time()
         model.train()

@@ -873,6 +873,20 @@ struct Screen3: View {
                     .buttonStyle(WideButton(color: trainer.isRunning ? DS.danger : DS.cyan))
                     .disabled(!trainer.isRunning && trainer.datasetPath.isEmpty && trainer.masterScriptPath.isEmpty)
 
+                    if trainer.isRunning {
+                        Button { trainer.spawnLocalWorker() } label: {
+                            HStack(spacing: DS.sp8) {
+                                Image(systemName: "plus.circle.fill")
+                                Text("Add Local Worker")
+                                if trainer.localWorkerCount > 0 {
+                                    Text("(\(trainer.localWorkerCount) active)")
+                                        .foregroundStyle(.white.opacity(0.5))
+                                }
+                            }
+                        }
+                        .buttonStyle(WideButton(color: DS.amber))
+                    }
+
                     if trainer.isRunning && trainer.workerCount > 0 {
                         Button { trainer.sendEnter() } label: {
                             HStack(spacing: DS.sp8) {
@@ -904,6 +918,40 @@ struct Screen3: View {
                 VStack(alignment: .leading, spacing: DS.sp8) {
                     HStack { Label_("Network Topology"); Spacer(); TempTag() }
                     TopoView(trainer: trainer)
+                }
+                .glassCard()
+
+                // Worker command for remote machines
+                VStack(alignment: .leading, spacing: DS.sp8) {
+                    Label_("Connect Remote Workers")
+                    Text("Run this on any machine with the dataset and Python + torch installed:")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.5))
+                    HStack(spacing: DS.sp8) {
+                        Text(trainer.workerCommand)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(DS.cyan.opacity(0.9))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(DS.sp8)
+                            .background(Color.black.opacity(0.3))
+                            .clipShape(RoundedRectangle(cornerRadius: DS.r8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.r8, style: .continuous)
+                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            )
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(trainer.workerCommand, forType: .string)
+                            trainer.statusMessage = "Copied to clipboard"
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 12))
+                        }
+                        .buttonStyle(SecondaryButton())
+                        .accessibilityLabel("Copy worker command")
+                    }
                 }
                 .glassCard()
 
@@ -1477,6 +1525,9 @@ final class TrainerViewModel {
     var localMetrics = SystemMetrics()
     var remoteWorkerMetrics: [WorkerMetrics] = []
 
+    // ── Worker management ────────────────────────────────────────────────
+    var localWorkerCount: Int = 0
+
     // ── Internal ─────────────────────────────────────────────────────────
     @ObservationIgnored private var runId: Int?       = nil
     @ObservationIgnored private let controlURL        = "http://localhost:8080"
@@ -1484,6 +1535,7 @@ final class TrainerViewModel {
     @ObservationIgnored private var logOffset: Int    = 0
     @ObservationIgnored private var backendProcess: Process? = nil
     @ObservationIgnored private var projectDir: String = ""
+    @ObservationIgnored private var localWorkerProcesses: [Process] = []
 
     var modelInstallRootPath: String {
         repositoryRootPath + "/models/pretrained"
@@ -1506,7 +1558,6 @@ final class TrainerViewModel {
         let pythonCandidates = [
             NSHomeDirectory() + "/venv_shared/bin/python3",
             projectDir + "/.venv/bin/python3",
-            projectDir + "/.venv-1/bin/python3",
             NSHomeDirectory() + "/.venv/bin/python3",
             "/usr/local/bin/python3",
             "/usr/bin/python3",
@@ -1679,6 +1730,7 @@ final class TrainerViewModel {
 
     func stop() {
         stopPolling()
+        terminateLocalWorkers()
         guard let runId else {
             isRunning = false; statusMessage = "Stopped."; return
         }
@@ -1699,6 +1751,7 @@ final class TrainerViewModel {
 
     func shutdown() {
         stopPolling()
+        terminateLocalWorkers()
         backendProcess?.terminate()
         backendProcess = nil
 
@@ -1710,6 +1763,7 @@ final class TrainerViewModel {
     }
     func killBackend() {
         stopPolling()
+        terminateLocalWorkers()
         isRunning = false
         runId = nil
         statusMessage = "Backend killed."
@@ -1721,6 +1775,67 @@ final class TrainerViewModel {
         proc.arguments = ["-c", "lsof -ti :8080 | xargs kill -9 2>/dev/null; true"]
         try? proc.run()
         proc.waitUntilExit()
+    }
+
+    // MARK: - Local Worker Management
+
+    func spawnLocalWorker() {
+        let repoRoot = repositoryRootPath
+        let workerScript = repoRoot + "/worker.py"
+        guard FileManager.default.fileExists(atPath: workerScript) else {
+            statusMessage = "✗ worker.py not found at \(repoRoot)"
+            return
+        }
+
+        let ip = masterIP ?? localIPAddress() ?? "127.0.0.1"
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: pythonPath)
+        proc.arguments = [workerScript]
+        proc.currentDirectoryURL = URL(fileURLWithPath: repoRoot)
+
+        var env = ProcessInfo.processInfo.environment
+        env["PYTHONUNBUFFERED"] = "1"
+        proc.environment = env
+
+        let inputPipe = Pipe()
+        proc.standardInput = inputPipe
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError  = FileHandle.nullDevice
+
+        proc.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.localWorkerProcesses.removeAll { $0 == proc }
+                self?.localWorkerCount = self?.localWorkerProcesses.count ?? 0
+            }
+        }
+
+        do {
+            try proc.run()
+            if let data = (ip + "\n").data(using: .utf8) {
+                inputPipe.fileHandleForWriting.write(data)
+                inputPipe.fileHandleForWriting.closeFile()
+            }
+            localWorkerProcesses.append(proc)
+            localWorkerCount = localWorkerProcesses.count
+            statusMessage = "Local worker #\(localWorkerCount) spawned → \(ip):8000"
+            log += "▶ Spawned local worker → \(ip):8000\n"
+        } catch {
+            statusMessage = "✗ Could not spawn worker: \(error.localizedDescription)"
+        }
+    }
+
+    func terminateLocalWorkers() {
+        for proc in localWorkerProcesses where proc.isRunning {
+            proc.terminate()
+        }
+        localWorkerProcesses.removeAll()
+        localWorkerCount = 0
+    }
+
+    var workerCommand: String {
+        let ip = masterIP ?? localIPAddress() ?? "<MASTER_IP>"
+        return "echo \"\(ip)\" | python3 worker.py"
     }
 
     // MARK: - Polling
