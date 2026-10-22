@@ -7,6 +7,7 @@ ssl._create_default_https_context = ssl.create_default_context
 
 import time
 import threading
+import shutil
 import curses
 import torch
 import torch.nn as nn
@@ -16,6 +17,7 @@ from torchvision import transforms
 from pathlib import Path
 
 from sharedcomputing.core.paths import REPO_ROOT
+from sharedcomputing.core import results_db
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
@@ -236,6 +238,8 @@ state = {
     "worker_index_map":   {},     # speed mode: {worker_id: [indices]}
     "worker_heartbeats":  {},     # {worker_id: last_ping_timestamp}
     "config":             {"rounds": ROUNDS},
+    "run_id":             None,   # id of this run in runs/results.db
+    "worker_stats":       {},     # {worker_id: {cpu: [..], ram_used: [..], temp: [..], ...}} for the database
 }
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -389,6 +393,13 @@ def receive_worker_metrics(data: dict):
     now = time.time()
     data["timestamp"] = now
     worker_metrics_store[worker_id] = data
+    # keep every sample during a run so the database gets avg/max per worker
+    if state["run_id"] is not None and worker_id in state["worker_stats"]:
+        ws = state["worker_stats"][worker_id]
+        ws["cpu"].append(data.get("cpu"))
+        ws["ram_used"].append(data.get("ram_used"))
+        ws["temp"].append(data.get("temp"))
+        ws["ram_total"] = data.get("ram_total")
     # Reset heartbeat so master knows this worker is still alive
     state["worker_heartbeats"][worker_id] = now
     return {"status": "ok"}
@@ -466,6 +477,34 @@ def run_master():
 
     print(f"\n  Starting training with {num_workers} worker(s)\n")
 
+    # ── results database: create this run's row ──────────────────────────────
+    for wid in worker_ids:
+        if TRAINING_MODE == "speed":
+            imgs = len(state["worker_index_map"].get(wid, []))
+        else:
+            imgs = n_train
+        state["worker_stats"][wid] = {"train_images": imgs, "rounds_responded": 0,
+                                      "cpu": [], "ram_used": [], "temp": [], "ram_total": None}
+    state["run_id"] = results_db.start_run({
+        "master_host":   f"{LOCAL_IP}:{MASTER_PORT}",
+        "master_device": str(MASTER_DEVICE),
+        "model":         SELECTED_MODEL,
+        "mode":          TRAINING_MODE,
+        "dataset":       str(DATASET_DIR),
+        "classes":       ", ".join(full_dataset.classes),
+        "images_total":  total,
+        "train_images":  n_train,
+        "val_images":    n_val,
+        "test_images":   n_test,
+        "batch_size":    BATCH_SIZE,
+        "rounds":        ROUNDS,
+        "local_epochs":  LOCAL_EPOCHS,
+        "lr":            LR,
+        "round_timeout": ROUND_TIMEOUT,
+        "num_workers":   num_workers,
+    })
+    print(f"  Results database → run #{state['run_id']} in {results_db.DB_PATH}\n")
+
     CKPT_DIR.mkdir(exist_ok=True)
     best_val_acc = 0.0
     history      = []
@@ -540,6 +579,12 @@ def run_master():
                             elapsed=elapsed, saved=saved,
                             workers_responded=len(state["worker_updates"])))
 
+        # save this round right away (kept even if the run is stopped later)
+        results_db.add_round(state["run_id"], history[-1])
+        for wid in state["worker_updates"]:
+            if wid in state["worker_stats"]:
+                state["worker_stats"][wid]["rounds_responded"] += 1
+
         print(f"  Round {rnd:>3}/{ROUNDS}  "
               f"val_loss={val_loss:.4f}  val_acc={val_acc:.3f}  "
               f"({elapsed:.1f}s){'  ← saved' if saved else ''}")
@@ -608,8 +653,39 @@ def run_master():
 """)
     print(f"  Summary → {SUMMARY}")
 
+    # ── keep a copy of every run's summary (summary_net.md gets overwritten) ──
+    results_db.RUNS_DIR.mkdir(exist_ok=True)
+    run_copy = results_db.RUNS_DIR / f"run_{state['run_id']}_{time.strftime('%Y-%m-%d_%H-%M-%S')}.md"
+    shutil.copy(SUMMARY, run_copy)
+
+    # ── results database: fill in the results ────────────────────────────────
+    results_db.save_workers(state["run_id"], state["worker_stats"])
+    results_db.finish_run(state["run_id"], {
+        "best_val_acc": best["val_acc"],
+        "best_round":   best["round"],
+        "test_acc":     test_acc,
+        "test_loss":    test_loss,
+        "total_time_s": total_time,
+        "avg_round_s":  total_time / len(history),
+        "summary_path": str(run_copy),
+    })
+    print(f"  Run #{state['run_id']} saved → {results_db.DB_PATH}")
+
+
+def run_master_and_record():
+    # if training crashes, mark the run as "error" in the database
+    try:
+        run_master()
+    except Exception as e:
+        if state["run_id"] is not None:
+            results_db.end_run_if_running(state["run_id"], "error", repr(e))
+        raise
+
 
 if __name__ == "__main__":
-    t = threading.Thread(target=run_master, daemon=True)
+    t = threading.Thread(target=run_master_and_record, daemon=True)
     t.start()
     uvicorn.run(app, host=MASTER_HOST, port=MASTER_PORT)
+    # uvicorn returns on Ctrl+C — if training never finished, mark it stopped
+    if state["run_id"] is not None:
+        results_db.end_run_if_running(state["run_id"], "stopped")

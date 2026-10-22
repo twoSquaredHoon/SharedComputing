@@ -3,8 +3,8 @@
 ## Run info
 | | |
 |--|--|
-| Date | 2026-03-16 21:42:22 |
-| Master | 10.141.67.141:8000 |
+| Date | 2026-06-16 21:28:41 |
+| Master | 192.168.0.30:8000 |
 | Workers | ['shs-MacBook-Pro.local'] |
 | Dataset | 308 images (train=215, val=46, test=47) |
 | Classes | ['cat', 'dog', 'fox'] |
@@ -25,11 +25,11 @@
 ## Results
 | Metric | Value |
 |--------|-------|
-| Best val accuracy | 0.326 (round 1) |
-| Test accuracy | 0.362 |
-| Total training time | 156.9s |
+| Best val accuracy | 0.239 (round 1) |
+| Test accuracy | 0.170 |
+| Total training time | 152.1s |
 
 ## Per-round log
 | Round | Val Loss | Val Acc | Time | Workers | Saved |
 |------:|---------:|--------:|-----:|--------:|:-----:|
-|     1 | 1.3943 | 0.326 | 156.8s | 1/1 | ✓ |
+|     1 | 1.3843 | 0.239 | 152.0s | 1/1 | ✓ |
