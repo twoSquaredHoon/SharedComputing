@@ -87,24 +87,30 @@ def get_train_loader(train_indices, batch_size, img_size):
     return DataLoader(Subset(dataset, train_indices),
                       batch_size=batch_size, shuffle=True, num_workers=0)
 
-def fetch_my_indices():
-    """For speed mode: fetch this worker's assigned indices from master."""
+def fetch_my_indices(min_round=0):
+    """For speed mode: fetch this worker's assigned indices from master.
+    The split can change every round (faster workers get more images),
+    so wait until the master's split is for round >= min_round."""
     while True:
         try:
             r = requests.get(f"{MASTER_URL}/my_indices/{WORKER_ID}", timeout=10)
             if r.status_code == 200:
-                return r.json()["train_indices"]
+                data = r.json()
+                if data.get("round", 0) >= min_round:
+                    return data["train_indices"]
             # 404 means indices not assigned yet — wait for training to start
         except Exception as e:
             print(f"  ⚠ Could not fetch indices: {e}")
         time.sleep(2)
 
-def upload_weights_with_retry(worker_id, weights):
+def upload_weights_with_retry(worker_id, weights, num_images, train_seconds):
     for attempt in range(1, UPLOAD_RETRIES + 1):
         try:
             resp = requests.post(f"{MASTER_URL}/update", json={
-                "worker_id": worker_id,
-                "weights":   weights,
+                "worker_id":     worker_id,
+                "weights":       weights,
+                "num_images":    num_images,
+                "train_seconds": train_seconds,
             }, timeout=30)
             resp.raise_for_status()
             return True
@@ -224,6 +230,16 @@ def main():
                 print(f"  ⚠ Poll error: {e}")
             time.sleep(1)
 
+        # Speed mode: master may give this worker more/fewer images each round
+        # depending on how fast it was last round
+        if mode == "speed" and rnd > 1:
+            new_indices = fetch_my_indices(min_round=rnd)
+            if new_indices != train_indices:
+                print(f"  Master reassigned {len(new_indices)} images to this worker "
+                      f"(was {len(train_indices)})")
+                train_indices = new_indices
+                train_loader  = get_train_loader(train_indices, batch_size, img_size)
+
         model.load_state_dict(dict_to_state(weights_resp["weights"], reference_state))
         trainable = [p for p in model.parameters() if p.requires_grad]
         optimizer = optim.Adam(trainable, lr=lr)
@@ -247,7 +263,8 @@ def main():
                   f"acc={correct/total:.3f}")
 
         elapsed = time.time() - t0
-        success = upload_weights_with_retry(WORKER_ID, model_to_dict(model))
+        success = upload_weights_with_retry(WORKER_ID, model_to_dict(model),
+                                            len(train_indices), elapsed)
         status  = "weights sent" if success else "upload failed"
         print(f"  → Round {rnd}/{rounds} done ({elapsed:.1f}s) — {status}\n")
 

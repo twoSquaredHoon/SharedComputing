@@ -20,7 +20,7 @@ This project is the middle ground. It keeps the system understandable, local, an
 | Native client | SwiftUI macOS app for dataset setup, hyperparameters, device connection, and results history |
 | Run control | FastAPI wrapper on port `8080`, SQLite run archive, log capture, summary and checkpoint archiving |
 | Training engine | `train.py`, `train_dist.py`, `master.py`, and `worker.py` |
-| Coordination | Worker registration, FedAvg aggregation, quality/speed modes, heartbeat-aware waiting |
+| Coordination | Worker registration, FedAvg aggregation weighted by images trained, quality/speed modes, speed-based data split, heartbeat-aware waiting |
 | Telemetry | Local Mac metrics via IOKit and remote worker metrics via `psutil` |
 | Sample data | Included `ImageFolder` dataset with 1,803 images across 7 classes |
 
@@ -72,7 +72,7 @@ That progression is the real design idea in this project. Each step solves a dif
 | Mode | How data is assigned | Why it exists |
 |------|----------------------|---------------|
 | `quality` | Every worker trains on the full train split | Simple FedAvg behavior with more overlap across workers |
-| `speed` | Train indices are divided across workers | Lower per-round work and faster wall-clock progress |
+| `speed` | Train indices are divided across workers in proportion to each worker's measured speed (images/sec), re-split every round. Round 1 is an even split | Faster machines get more images so all workers finish a round at about the same time |
 
 ## Run Lifecycle
 
@@ -97,9 +97,10 @@ sequenceDiagram
 
     loop Each round
         M->>W: Publish global weights
-        W->>M: Train locally and upload update
+        W->>M: Train locally and upload update (+ images trained, train time)
         W->>M: Send heartbeat + metrics
-        M->>M: Aggregate with FedAvg
+        M->>M: Aggregate with FedAvg (weighted by images trained)
+        M->>M: Speed mode: measure worker speed, re-split data for next round
     end
 
     M->>R: Write summary and checkpoint
@@ -128,6 +129,7 @@ sequenceDiagram
 | FedAvg aggregation | Easy to understand and fits both local and LAN-based experiments | Parameter server or synchronous gradient exchange |
 | Heartbeat-aware waiting | Avoids throwing away progress when workers are slow but still alive | Fixed timeout with hard failure |
 | Quality vs speed mode | Lets users trade statistical overlap for faster rounds | Single rigid scheduling mode |
+| Speed-proportional split in speed mode | An even split makes every round wait for the slowest machine; giving faster workers more images balances finish times | Even split across workers |
 | SQLite run archive | Gives local observability and history with almost zero ops cost | External database or log service |
 | Worker-local datasets | Avoids streaming training data over the network | Central dataset server |
 
@@ -137,7 +139,7 @@ The strongest end-to-end path in this repository is:
 
 - ResNet18 transfer learning
 - LAN-based master/worker training
-- `quality` and `speed` scheduling modes
+- `quality` and `speed` scheduling modes (speed mode splits data by measured worker speed)
 - macOS app to start runs and inspect history
 - Local result archiving through SQLite, logs, summaries, and checkpoints
 
@@ -264,7 +266,7 @@ python3 -m unittest tests.test_backend_helpers -q
 SharedComputing is not just "PyTorch over HTTP." The interesting part is how it solves several practical coordination issues without hiding them behind a heavy platform:
 
 - It preserves a clear single-machine baseline before introducing distribution.
-- It supports both whole-dataset and sharded worker scheduling.
+- It supports both whole-dataset and sharded worker scheduling, with shards sized by each worker's measured speed.
 - It keeps the training loop inspectable while still giving the user a native app.
 - It archives enough run state to make repeated experiments comparable.
 - It treats observability as part of the workflow, not an afterthought.

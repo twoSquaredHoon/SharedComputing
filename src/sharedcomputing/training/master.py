@@ -236,6 +236,8 @@ state = {
     "classes":            None,
     "train_indices":      None,   # quality mode: full list sent to all workers
     "worker_index_map":   {},     # speed mode: {worker_id: [indices]}
+    "worker_speeds":      {},     # speed mode: {worker_id: images/sec measured last round}
+    "worker_round_info":  {},     # {worker_id: {"num_images": n, "train_seconds": s}} for this round
     "worker_heartbeats":  {},     # {worker_id: last_ping_timestamp}
     "config":             {"rounds": ROUNDS},
     "run_id":             None,   # id of this run in runs/results.db
@@ -249,6 +251,8 @@ class RegisterRequest(BaseModel):
 class WeightsUpdate(BaseModel):
     worker_id: str
     weights: dict
+    num_images: int | None = None        # how many images the worker trained on this round
+    train_seconds: float | None = None   # how long the local training took
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def model_to_dict(model):
@@ -314,6 +318,35 @@ def assign_split_indices(train_indices, worker_ids):
     chunks = [train_indices[i::n] for i in range(n)]
     return {wid: chunk for wid, chunk in zip(worker_ids, chunks)}
 
+def assign_weighted_indices(train_indices, worker_ids, speeds):
+    """
+    Divide train_indices across workers in proportion to their measured speed
+    (images/sec). Faster workers get more images so everyone finishes the
+    round at about the same time. Workers with no speed yet get the average.
+    Every worker gets at least 1 image.
+    """
+    known = [speeds[w] for w in worker_ids if speeds.get(w)]
+    default_speed = sum(known) / len(known) if known else 1.0
+    worker_speed = {w: speeds.get(w) or default_speed for w in worker_ids}
+    total_speed = sum(worker_speed.values())
+
+    n = len(train_indices)
+    extra = n - len(worker_ids)          # images left after giving everyone 1
+    counts = {w: 1 + int(extra * worker_speed[w] / total_speed) for w in worker_ids}
+
+    # images lost to rounding down go to the fastest workers first
+    leftover = n - sum(counts.values())
+    fastest_first = sorted(worker_ids, key=lambda w: worker_speed[w], reverse=True)
+    for i in range(leftover):
+        counts[fastest_first[i % len(fastest_first)]] += 1
+
+    result = {}
+    start = 0
+    for w in worker_ids:
+        result[w] = train_indices[start:start + counts[w]]
+        start += counts[w]
+    return result
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.post("/register")
 def register(req: RegisterRequest):
@@ -353,7 +386,7 @@ def get_my_indices(worker_id: str):
     indices = state["worker_index_map"].get(worker_id)
     if indices is None:
         raise HTTPException(status_code=404, detail="No indices assigned yet — wait for training to start")
-    return {"train_indices": indices}
+    return {"round": state["round"], "train_indices": indices}
 
 @app.post("/update")
 def receive_update(update: WeightsUpdate):
@@ -364,6 +397,10 @@ def receive_update(update: WeightsUpdate):
         return {"status": "duplicate_ignored"}
 
     state["worker_updates"][update.worker_id] = update.weights
+    state["worker_round_info"][update.worker_id] = {
+        "num_images":    update.num_images,
+        "train_seconds": update.train_seconds,
+    }
     print(f"  ← Received update from {update.worker_id}  "
           f"({len(state['worker_updates'])}/{len(state['registered_workers'])} workers done)")
     if len(state["worker_updates"]) >= len(state["registered_workers"]):
@@ -514,8 +551,9 @@ def run_master():
 
     for rnd in range(1, ROUNDS + 1):
         t0 = time.time()
-        state["round"]          = rnd
-        state["worker_updates"] = {}
+        state["round"]             = rnd
+        state["worker_updates"]    = {}
+        state["worker_round_info"] = {}
 
         print(f"  Round {rnd}/{ROUNDS} — serializing weights...")
         state["global_weights"] = model_to_dict(global_model)
@@ -555,17 +593,45 @@ def run_master():
         elif received < num_workers:
             print(f"  ⚠ Only {received}/{num_workers} workers responded — aggregating partial results.")
 
+        responded = list(state["worker_updates"].keys())
         worker_states = [
-            dict_to_state(w, reference_state)
-            for w in state["worker_updates"].values()
+            dict_to_state(state["worker_updates"][wid], reference_state)
+            for wid in responded
         ]
-        avg_state = {
-            key: torch.stack([ws[key].float() for ws in worker_states]).mean(dim=0).to(
-                dtype=reference_state[key].dtype
-            )
-            for key in worker_states[0]
-        }
+        # FedAvg weighted by how many images each worker trained on.
+        # In speed mode workers get different amounts of data, so a worker
+        # with more images should count more. In quality mode everyone has the
+        # same count, so this is the same as a plain average.
+        image_counts = []
+        for wid in responded:
+            n_imgs = state["worker_round_info"].get(wid, {}).get("num_images")
+            image_counts.append(n_imgs if n_imgs else 1)
+        total_imgs = sum(image_counts)
+        avg_state = {}
+        for key in worker_states[0]:
+            weighted_sum = sum(ws[key].float() * (cnt / total_imgs)
+                               for ws, cnt in zip(worker_states, image_counts))
+            avg_state[key] = weighted_sum.to(dtype=reference_state[key].dtype)
         global_model.load_state_dict(avg_state)
+
+        # ── Speed mode: measure each worker's speed and re-split for next round ──
+        if TRAINING_MODE == "speed":
+            for wid in responded:
+                info = state["worker_round_info"].get(wid, {})
+                n_imgs, secs = info.get("num_images"), info.get("train_seconds")
+                if n_imgs and secs and secs > 0:
+                    state["worker_speeds"][wid] = n_imgs * LOCAL_EPOCHS / secs
+            if rnd < ROUNDS:
+                state["worker_index_map"] = assign_weighted_indices(
+                    state["train_indices"], worker_ids, state["worker_speeds"])
+                print(f"  Rebalanced split for round {rnd + 1}:")
+                for wid in worker_ids:
+                    spd = state["worker_speeds"].get(wid)
+                    spd_txt = f"{spd:.1f} img/s" if spd else "no speed yet"
+                    imgs = len(state["worker_index_map"][wid])
+                    print(f"    {wid}: {spd_txt:<14} → {imgs} images")
+                    if wid in state["worker_stats"]:
+                        state["worker_stats"][wid]["train_images"] = imgs
 
         val_loss, val_acc = evaluate(global_model, val_loader)
         elapsed = time.time() - t0
